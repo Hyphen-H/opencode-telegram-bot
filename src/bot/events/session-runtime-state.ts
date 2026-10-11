@@ -1,4 +1,8 @@
-import type { SubagentInfo, ToolInfo } from "../../app/managers/summary-aggregation-manager.js";
+import {
+  outlivesParentTurn,
+  type SubagentInfo,
+  type ToolInfo,
+} from "../../app/managers/summary-aggregation-manager.js";
 import { TOOL_ELAPSED_THRESHOLD_MS } from "../../app/formatters/duration-formatter.js";
 import { ToolMessageBatcher } from "../../app/formatters/tool-message-batcher.js";
 import { logger } from "../../utils/logger.js";
@@ -52,7 +56,8 @@ interface RunningToolHooks {
 
 function isRunningBackgroundSubagent(subagent: SubagentInfo): boolean {
   return Boolean(
-    subagent.background && (subagent.status === "pending" || subagent.status === "running"),
+    outlivesParentTurn(subagent) &&
+      (subagent.status === "pending" || subagent.status === "running"),
   );
 }
 
@@ -625,7 +630,7 @@ export class SessionRuntimeState {
       if (sessionId === undefined || snapshotSessionId === sessionId) {
         this.setKeptSubagents(
           snapshotSessionId,
-          subagents.filter((subagent) => !subagent.background),
+          subagents.filter((subagent) => !outlivesParentTurn(subagent)),
         );
       }
     }

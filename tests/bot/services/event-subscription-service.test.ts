@@ -1851,6 +1851,72 @@ describe("bot/services/event-subscription-service", () => {
       expect(cardEdits().at(-1)).toMatch(/✅ Completed · 🕒/);
     });
 
+    it("keeps a parent card on its background nested launch past the turn, then ends it in place", async () => {
+      const { api, summaryAggregator } = await setupService(false, { startAssistantRun: true });
+      let nextMessageId = 100;
+      api.sendMessage.mockImplementation(async () => ({ message_id: nextMessageId++ }));
+      const emitLaunch = (status: "running" | "completed") =>
+        summaryAggregator.processEvent({
+          type: "message.part.updated",
+          properties: {
+            part: {
+              id: "child-launch",
+              sessionID: "child-session-1",
+              messageID: "child-message-1",
+              type: "tool",
+              callID: "call-nested",
+              tool: "task",
+              state: {
+                status,
+                input: { description: "Count Kotlin files", prompt: "Count", background: true },
+                metadata: { sessionId: "nested-session-1" },
+              },
+            },
+          },
+        } as unknown as Event);
+
+      useTrackerFakeTimers();
+      emitSubagentStart(summaryAggregator);
+      emitLaunch("running");
+      summaryAggregator.processEvent({
+        type: "session.created",
+        properties: {
+          info: {
+            id: "nested-session-1",
+            parentID: "child-session-1",
+            title: "Count Kotlin files (@general subagent)",
+            slug: "nested",
+            directory: "D:/repo",
+            projectID: "p1",
+            version: "1",
+            time: { created: Date.now(), updated: Date.now() },
+          },
+        },
+      } as unknown as Event);
+      await flushPendingDispatch();
+      const cardMessageId = nextMessageId - 1;
+      summaryAggregator.processEvent({
+        type: "session.idle",
+        properties: { sessionID: "child-session-1" },
+      } as unknown as Event);
+      emitAssistantTextPart(summaryAggregator, "delegated");
+      emitAssistantCompleted(summaryAggregator);
+      emitSessionIdle(summaryAggregator);
+      await flushPendingDispatch();
+
+      await vi.advanceTimersByTimeAsync(25_000);
+      const cardEdits = () =>
+        api.editMessageText.mock.calls
+          .filter((call) => call[1] === cardMessageId)
+          .map((call) => String(call[2]));
+      expect(cardEdits().at(-1)).toMatch(/🤖 Running Task · 🕒 \d+s$/);
+
+      emitLaunch("completed");
+      await flushPendingDispatch();
+      expect(cardEdits().at(-1)).toMatch(/✅ Completed · 🕒/);
+      expect(collectSentTexts(api).some((text) => text.includes("Count Kotlin files"))).toBe(false);
+    });
+
     it("stops a background command once its session is no longer current", async () => {
       const { api, summaryAggregator } = await setupService(false, { startAssistantRun: true });
       const sessionService = await import("../../../src/app/services/session-service.js");
