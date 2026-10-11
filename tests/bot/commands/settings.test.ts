@@ -45,6 +45,7 @@ const mocked = vi.hoisted(() => ({
   getPinnedDashboardEnabledMock: vi.fn(),
   setPinnedDashboardEnabledMock: vi.fn(),
   applyPinnedDashboardEnabledMock: vi.fn(),
+  refreshSessionValuesMock: vi.fn(),
   getTtsModeMock: vi.fn(),
   setTtsModeMock: vi.fn(),
   getPromptQueueModeMock: vi.fn(),
@@ -94,6 +95,7 @@ function createDeps() {
     pinnedMessageManager: {
       initialize: vi.fn(),
       applyPinnedDashboardEnabled: mocked.applyPinnedDashboardEnabledMock,
+      refreshSessionValues: mocked.refreshSessionValuesMock,
     } as never,
   };
 }
@@ -574,6 +576,23 @@ describe("bot/callbacks/settings-callback-handler", () => {
     const [, opts] = call;
     expect(defined(opts?.reply_markup?.inline_keyboard[5]?.[0]).text).toBe(
       `${t("settings.pin_session_dashboard.label")}: ${t("settings.value.off")}`,
+    );
+  });
+
+  it("corrects a dashboard turned on to the session's loaded values after saving", async () => {
+    mocked.refreshSessionValuesMock.mockReset();
+    mocked.refreshSessionValuesMock.mockResolvedValue(undefined);
+    mocked.getPinnedDashboardEnabledMock.mockReturnValueOnce(false);
+    activateSettingsMenu();
+    const ctx = createCallbackContext(SETTINGS_PIN_SESSION_DASHBOARD_CALLBACK);
+
+    await handleSettingsCallback(ctx, createDeps());
+
+    expect(mocked.applyPinnedDashboardEnabledMock).toHaveBeenCalledWith(true);
+    expect(mocked.setPinnedDashboardEnabledMock).toHaveBeenCalledWith(true);
+    expect(mocked.refreshSessionValuesMock).toHaveBeenCalledOnce();
+    expect(mocked.setPinnedDashboardEnabledMock.mock.invocationCallOrder[0]).toBeLessThan(
+      defined(mocked.refreshSessionValuesMock.mock.invocationCallOrder[0]),
     );
   });
 

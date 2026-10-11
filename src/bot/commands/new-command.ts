@@ -80,6 +80,7 @@ export async function newCommand(ctx: CommandContext<Context>, deps: NewCommandD
       ...deps,
       chatId: ctx.chat.id,
       session: sessionInfo,
+      sessionCreated: true,
     });
 
     // Get current state for keyboard

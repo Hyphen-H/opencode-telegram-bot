@@ -93,6 +93,8 @@ export async function statusCommand(ctx: CommandContext<Context>, deps: StatusCo
       }
       deps.keyboardManager.initialize(ctx.api, ctx.chat.id);
     }
+    // A session change or restore still loading answers with its values, not the previous ones
+    await deps.pinnedMessageManager.waitForSessionValues();
     // Sync current context (tokens used + limit) into keyboard state
     const contextInfo = deps.pinnedMessageManager.getContextInfo();
     if (contextInfo) {

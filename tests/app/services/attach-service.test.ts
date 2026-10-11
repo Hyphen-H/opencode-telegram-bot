@@ -10,6 +10,7 @@ import {
 import { createAttachPresentation } from "../../../src/bot/services/attach-presentation.js";
 import type { AppContainer } from "../../../src/app/bootstrap/app-container.js";
 import { createTestAppContainer } from "../../helpers/app-container.js";
+import { defined } from "../../helpers/defined.js";
 
 const mocked = vi.hoisted(() => ({
   currentProject: {
@@ -32,8 +33,10 @@ const mocked = vi.hoisted(() => ({
   pinnedIsInitializedMock: vi.fn(() => true),
   pinnedInitializeMock: vi.fn(),
   pinnedGetStateMock: vi.fn(),
-  pinnedOnSessionChangeMock: vi.fn(),
-  pinnedRestoreExistingSessionMock: vi.fn(),
+  pinnedPrepareSessionChangeMock: vi.fn(),
+  pinnedPrepareRestoreMock: vi.fn(),
+  pinnedShowPreparedSessionMock: vi.fn(),
+  pinnedDropPendingPrepareMock: vi.fn(),
   pinnedLoadContextFromHistoryMock: vi.fn(),
   pinnedGetContextInfoMock: vi.fn(() => null),
   pinnedSetAttachStateMock: vi.fn(),
@@ -109,8 +112,10 @@ function createDeps(): AppContainer {
       isInitialized: mocked.pinnedIsInitializedMock,
       initialize: mocked.pinnedInitializeMock,
       getState: mocked.pinnedGetStateMock,
-      onSessionChange: mocked.pinnedOnSessionChangeMock,
-      restoreExistingSession: mocked.pinnedRestoreExistingSessionMock,
+      prepareSessionChange: mocked.pinnedPrepareSessionChangeMock,
+      prepareRestore: mocked.pinnedPrepareRestoreMock,
+      showPreparedSession: mocked.pinnedShowPreparedSessionMock,
+      dropPendingPrepare: mocked.pinnedDropPendingPrepareMock,
       loadContextFromHistory: mocked.pinnedLoadContextFromHistoryMock,
       getContextInfo: mocked.pinnedGetContextInfoMock,
       setAttachState: mocked.pinnedSetAttachStateMock,
@@ -190,10 +195,13 @@ describe("attach/service", () => {
       sessionId: mocked.currentSession?.id ?? null,
       messageId: 123,
     }));
-    mocked.pinnedOnSessionChangeMock.mockReset();
-    mocked.pinnedOnSessionChangeMock.mockResolvedValue(undefined);
-    mocked.pinnedRestoreExistingSessionMock.mockReset();
-    mocked.pinnedRestoreExistingSessionMock.mockResolvedValue(undefined);
+    mocked.pinnedPrepareSessionChangeMock.mockReset();
+    mocked.pinnedPrepareSessionChangeMock.mockResolvedValue(undefined);
+    mocked.pinnedPrepareRestoreMock.mockReset();
+    mocked.pinnedPrepareRestoreMock.mockResolvedValue(undefined);
+    mocked.pinnedShowPreparedSessionMock.mockReset();
+    mocked.pinnedShowPreparedSessionMock.mockResolvedValue(undefined);
+    mocked.pinnedDropPendingPrepareMock.mockReset();
     mocked.pinnedLoadContextFromHistoryMock.mockReset();
     mocked.pinnedLoadContextFromHistoryMock.mockResolvedValue(undefined);
     mocked.pinnedGetContextInfoMock.mockReset();
@@ -216,6 +224,40 @@ describe("attach/service", () => {
     mocked.ensureEventSubscriptionMock.mockReset();
     mocked.ensureEventSubscriptionMock.mockResolvedValue(undefined);
     mocked.stopEventListeningMock.mockReset();
+  });
+
+  it("draws the dashboard only after the session's updates are followed", async () => {
+    mocked.pinnedGetStateMock.mockReturnValueOnce({ sessionId: "other", messageId: 1 });
+
+    await attachToSession({
+      ...deps,
+      bot: createBot(),
+      chatId: 777,
+      session: mocked.currentSession!,
+      ensureEventSubscription: mocked.ensureEventSubscriptionMock,
+    });
+
+    const prepared = defined(mocked.pinnedPrepareSessionChangeMock.mock.invocationCallOrder[0]);
+    const followed = defined(mocked.setSessionSummaryMock.mock.invocationCallOrder[0]);
+    const shown = defined(mocked.pinnedShowPreparedSessionMock.mock.invocationCallOrder[0]);
+    expect(prepared).toBeLessThan(followed);
+    expect(followed).toBeLessThan(shown);
+  });
+
+  it("still draws the prepared dashboard when following the session fails", async () => {
+    mocked.ensureEventSubscriptionMock.mockRejectedValueOnce(new Error("subscribe failed"));
+
+    await expect(
+      attachToSession({
+        ...deps,
+        bot: createBot(),
+        chatId: 777,
+        session: mocked.currentSession!,
+        ensureEventSubscription: mocked.ensureEventSubscriptionMock,
+      }),
+    ).rejects.toThrow("subscribe failed");
+
+    expect(mocked.pinnedShowPreparedSessionMock).toHaveBeenCalledTimes(1);
   });
 
   it("follows an idle session and updates attach state", async () => {
@@ -393,15 +435,13 @@ describe("attach/service", () => {
     });
 
     expect(restored).toBe(true);
-    expect(mocked.pinnedRestoreExistingSessionMock).toHaveBeenCalledWith(
+    expect(mocked.pinnedPrepareRestoreMock).toHaveBeenCalledWith(
       "session-1",
       "Session One",
-    );
-    expect(mocked.pinnedOnSessionChangeMock).not.toHaveBeenCalled();
-    expect(mocked.pinnedLoadContextFromHistoryMock).toHaveBeenCalledWith(
-      "session-1",
       "D:\\Projects\\Repo",
     );
+    expect(mocked.pinnedPrepareSessionChangeMock).not.toHaveBeenCalled();
+    expect(mocked.pinnedShowPreparedSessionMock).toHaveBeenCalledTimes(1);
   });
 
   it("drops a saved session the server no longer has instead of following it", async () => {

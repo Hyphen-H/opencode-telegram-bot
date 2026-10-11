@@ -19,10 +19,14 @@ interface EnsureAttachPinnedSessionParams {
   chatId: number;
   session: SessionInfo;
   forceFullRestore?: boolean;
+  sessionCreated?: boolean;
 }
 
 export interface AttachPresentationDeps {
-  ensurePinnedSession(params: EnsureAttachPinnedSessionParams): Promise<void>;
+  /** Loads the session's dashboard values without drawing them. */
+  preparePinnedSession(params: EnsureAttachPinnedSessionParams): Promise<void>;
+  /** Draws the dashboard prepared last, once the session's updates are followed. */
+  showPinnedSession(): Promise<void>;
   syncAttachState(attached: boolean, busy: boolean): Promise<void>;
   showCurrentQuestion(api: Bot<Context>["api"], chatId: number): Promise<void>;
   showPermissionRequest(
@@ -67,6 +71,8 @@ export interface AttachSessionDeps extends AttachRestoreDeps {
   session: SessionInfo;
   ensureEventSubscription: (directory: string) => Promise<void>;
   forceFullRestore?: boolean | undefined;
+  /** The session was created a moment ago, so it has no values to load. */
+  sessionCreated?: boolean | undefined;
 }
 
 export interface AttachSessionResult {
@@ -320,21 +326,28 @@ export async function attachToSession(deps: AttachSessionDeps): Promise<AttachSe
   const { attachManager, permissionManager, questionManager, summaryAggregator } = deps;
   const alreadyAttached = attachManager.isAttachedSession(session.id, session.directory);
 
-  await attachPresentation?.ensurePinnedSession({
+  await attachPresentation?.preparePinnedSession({
     api: bot.api,
     chatId,
     session,
     forceFullRestore,
+    sessionCreated: deps.sessionCreated ?? false,
   });
 
-  if (!alreadyAttached) {
-    await ensureEventSubscription(session.directory);
-    summaryAggregator.setSession(session.id);
-    summaryAggregator.setBotAndChatId(bot, chatId);
-    attachManager.attach(session.id, session.directory);
-  } else {
-    summaryAggregator.setSession(session.id);
-    summaryAggregator.setBotAndChatId(bot, chatId);
+  try {
+    if (!alreadyAttached) {
+      await ensureEventSubscription(session.directory);
+      summaryAggregator.setSession(session.id);
+      summaryAggregator.setBotAndChatId(bot, chatId);
+      attachManager.attach(session.id, session.directory);
+    } else {
+      summaryAggregator.setSession(session.id);
+      summaryAggregator.setBotAndChatId(bot, chatId);
+    }
+  } finally {
+    // Drawn only now, so updates that arrived since the values loaded are in the first draw;
+    // drawn even when following fails, as the prepared values are this session's.
+    await attachPresentation?.showPinnedSession();
   }
 
   const { data: statuses, error: statusesError } = await opencodeClient.session.status({

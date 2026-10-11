@@ -548,12 +548,32 @@ export class SummaryAggregator {
     }
   }
 
+  /**
+   * Runs a task through the outbound queue: now, or after the hold is drained while it is on.
+   */
+  runOutbound(task: () => void | Promise<void>): Promise<void> {
+    if (this.outboundHeld) {
+      this.deferredOutbound.push(task);
+      return Promise.resolve();
+    }
+
+    return Promise.resolve(task());
+  }
+
   private scheduleOutbound(task: () => void | Promise<void>, immediate: boolean): void {
     if (this.outboundHeld) {
       this.deferredOutbound.push(task);
       return;
     }
 
+    this.deliverOutbound(task, immediate);
+  }
+
+  /**
+   * Delivers past the hold: the dashboard's values (tokens, cost, files) are never held, only
+   * the redraws and messages that show them.
+   */
+  private deliverOutbound(task: () => void | Promise<void>, immediate: boolean): void {
     if (immediate) {
       setImmediate(() => {
         void Promise.resolve(task()).catch((err) => {
@@ -1521,7 +1541,7 @@ export class SummaryAggregator {
           `[Aggregator] Tokens: input=${tokens.input}, output=${tokens.output}, reasoning=${tokens.reasoning}, cacheRead=${tokens.cacheRead}, cacheWrite=${tokens.cacheWrite}, completed=${isCompleted}`,
         );
         // Call synchronously so keyboardManager is updated before onComplete sends the reply
-        this.scheduleOutbound(
+        this.deliverOutbound(
           () => this.onTokensCallback?.(info.sessionID, tokens, isCompleted),
           false,
         );
@@ -1548,7 +1568,7 @@ export class SummaryAggregator {
         // Extract and report cost
         if (this.onCostCallback && assistantInfo.cost !== undefined) {
           logger.debug(`[Aggregator] Cost: $${assistantInfo.cost.toFixed(2)}`);
-          this.scheduleOutbound(
+          this.deliverOutbound(
             () => this.onCostCallback?.(info.sessionID, assistantInfo.cost),
             false,
           );
@@ -1853,7 +1873,7 @@ export class SummaryAggregator {
             const callback = this.onFileChangeCallback;
             for (const { fileChange } of preparedFiles) {
               if (fileChange) {
-                this.scheduleOutbound(() => callback(part.sessionID, fileChange), false);
+                this.deliverOutbound(() => callback(part.sessionID, fileChange), false);
               }
             }
           }
@@ -2620,7 +2640,7 @@ export class SummaryAggregator {
       }));
 
       const callback = this.onSessionDiffCallback;
-      this.scheduleOutbound(() => {
+      this.deliverOutbound(() => {
         callback(properties.sessionID, diffs);
       }, true);
     }

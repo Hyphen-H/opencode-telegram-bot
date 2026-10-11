@@ -268,6 +268,7 @@ export async function processUserPrompt(
     ...deps,
     chatId: ctx.chat!.id,
     session: currentSession,
+    sessionCreated: createdNewSession,
   });
 
   if (createdNewSession) {

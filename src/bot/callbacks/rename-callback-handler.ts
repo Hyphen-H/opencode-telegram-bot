@@ -123,7 +123,9 @@ export async function handleRenameTextAnswer(
     });
 
     if (deps.pinnedMessageManager.isInitialized()) {
-      await deps.pinnedMessageManager.onSessionChange(sessionInfo.sessionId, newTitle);
+      await deps.pinnedMessageManager.onSessionChange(sessionInfo.sessionId, newTitle, {
+        directory: sessionInfo.directory,
+      });
     }
 
     const messageId = deps.renameManager.getMessageId();

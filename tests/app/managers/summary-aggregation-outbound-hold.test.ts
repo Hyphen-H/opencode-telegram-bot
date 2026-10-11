@@ -71,4 +71,57 @@ describe("summary aggregator outbound hold", () => {
     await draining;
     expect(aggregator.hasDeferredOutbound()).toBe(false);
   });
+
+  it("delivers the dashboard's values during a hold while chat output stays held", async () => {
+    const aggregator = new SummaryAggregator();
+    const onPartial = vi.fn();
+    const onTokens = vi.fn();
+    const onSessionDiff = vi.fn();
+    aggregator.setSession("session-1");
+    aggregator.setOnPartial(onPartial);
+    aggregator.setOnTokens(onTokens);
+    aggregator.setOnSessionDiff(onSessionDiff);
+    aggregator.holdOutbound();
+
+    aggregator.processEvent({
+      type: "message.updated",
+      properties: {
+        info: {
+          id: "message-1",
+          sessionID: "session-1",
+          role: "assistant",
+          time: { created: 1 },
+          tokens: { input: 100, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+      },
+    } as unknown as Event);
+    emitPartial(aggregator, "message-1", "held");
+    aggregator.processEvent({
+      type: "session.diff",
+      properties: {
+        sessionID: "session-1",
+        diff: [{ file: "src/a.ts", additions: 1, deletions: 0 }],
+      },
+    } as unknown as Event);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(onTokens).toHaveBeenCalled();
+    expect(onSessionDiff).toHaveBeenCalledOnce();
+    expect(onPartial).not.toHaveBeenCalled();
+  });
+
+  it("runs a queued task now when not held and after the drain when held", async () => {
+    const aggregator = new SummaryAggregator();
+    const task = vi.fn();
+
+    await aggregator.runOutbound(task);
+    expect(task).toHaveBeenCalledOnce();
+
+    aggregator.holdOutbound();
+    await aggregator.runOutbound(task);
+    expect(task).toHaveBeenCalledOnce();
+
+    await aggregator.drainOutbound(0);
+    expect(task).toHaveBeenCalledTimes(2);
+  });
 });

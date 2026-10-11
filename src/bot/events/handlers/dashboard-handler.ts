@@ -9,6 +9,9 @@ type DashboardDeps = EventHandlerDeps<
 export function registerDashboardHandlers(deps: DashboardDeps): void {
   const { runtime, keyboardManager, pinnedMessageManager, summaryAggregator } = deps;
 
+  // Values reach the dashboard at once; its redraws wait while the chat's output is held.
+  pinnedMessageManager.setRenderScheduler((render) => summaryAggregator.runOutbound(render));
+
   summaryAggregator.setOnTokens(async (_sessionId, tokens, isCompleted) => {
     if (!pinnedMessageManager.isInitialized()) {
       return;
@@ -68,9 +71,12 @@ export function registerDashboardHandlers(deps: DashboardDeps): void {
 
   summaryAggregator.setOnSessionDiff(async (sessionId, diffs) => {
     if (isCompactProgressMode()) {
-      for (const diff of diffs) {
-        runtime.compactProgressStreamer.addFileChange(sessionId, diff.file);
-      }
+      // Held with the card's other updates, so it keeps their order.
+      void summaryAggregator.runOutbound(() => {
+        for (const diff of diffs) {
+          runtime.compactProgressStreamer.addFileChange(sessionId, diff.file);
+        }
+      });
     }
 
     if (!pinnedMessageManager.isInitialized()) {
@@ -86,7 +92,9 @@ export function registerDashboardHandlers(deps: DashboardDeps): void {
 
   summaryAggregator.setOnFileChange((sessionId, change) => {
     if (isCompactProgressMode()) {
-      runtime.compactProgressStreamer.addFileChange(sessionId, change.file);
+      void summaryAggregator.runOutbound(() =>
+        runtime.compactProgressStreamer.addFileChange(sessionId, change.file),
+      );
     }
 
     if (!pinnedMessageManager.isInitialized()) {

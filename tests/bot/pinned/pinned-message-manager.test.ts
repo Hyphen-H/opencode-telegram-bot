@@ -76,6 +76,11 @@ const { __resetStreamThrottleForTests, noteStreamActivity } = await import(
 
 let pinnedMessageManager: InstanceType<typeof PinnedMessageManager>;
 
+async function restoreSession(sessionId: string, title: string): Promise<void> {
+  await pinnedMessageManager.prepareRestore(sessionId, title);
+  await pinnedMessageManager.showPreparedSession();
+}
+
 describe("pinned/manager", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -533,10 +538,8 @@ describe("pinned/manager", () => {
         { file: "D:/repo/src/a.ts", additions: 3, deletions: 1 },
         { file: "D:/repo/src/b.ts", additions: 0, deletions: 2 },
       ]);
-      expect(mocked.opencodeClient.session.messages).not.toHaveBeenCalled();
-      expect(fakeApi.editMessageText).toHaveBeenCalledWith(
+      expect(fakeApi.sendMessage).toHaveBeenCalledWith(
         123,
-        999,
         expect.stringContaining("src/a.ts (+3 -1)"),
       );
     });
@@ -738,7 +741,7 @@ describe("pinned/manager", () => {
     });
 
     it("edits the persisted pinned message instead of creating a new one", async () => {
-      await pinnedMessageManager.restoreExistingSession("ses-1", "Restored session");
+      await restoreSession("ses-1", "Restored session");
 
       expect(fakeApi.sendMessage).not.toHaveBeenCalled();
       expect(fakeApi.editMessageText).toHaveBeenCalledWith(
@@ -754,7 +757,7 @@ describe("pinned/manager", () => {
         data: [{ file: "D:/repo/src/a.ts", additions: 4, deletions: 0 }],
       });
 
-      await pinnedMessageManager.restoreExistingSession("ses-1", "Restored session");
+      await restoreSession("ses-1", "Restored session");
 
       expect(pinnedMessageManager.getState().changedFiles).toEqual([
         { file: "D:/repo/src/a.ts", additions: 4, deletions: 0 },
@@ -819,7 +822,7 @@ describe("pinned/manager", () => {
       pinnedMessageManager.initialize(fakeApi as never, 123);
       mocked.waitForModelContextLimit.mockResolvedValue(1_000_000);
 
-      await pinnedMessageManager.restoreExistingSession("ses-1", "Restored session");
+      await restoreSession("ses-1", "Restored session");
 
       await vi.waitFor(() => expect(pinnedMessageManager.getContextLimit()).toBe(1_000_000));
     });
@@ -1027,7 +1030,7 @@ describe("pinned/manager", () => {
       mocked.getPinnedMessageId.mockReturnValue(777);
       pinnedMessageManager.initialize(fakeApi as never, 123);
 
-      await pinnedMessageManager.restoreExistingSession("ses-1", "Restored session");
+      await restoreSession("ses-1", "Restored session");
 
       expect(fakeApi.unpinChatMessage).toHaveBeenCalledWith(123, 777);
       expect(fakeApi.editMessageText).not.toHaveBeenCalled();
@@ -1043,7 +1046,7 @@ describe("pinned/manager", () => {
       fakeApi.unpinChatMessage.mockRejectedValueOnce(new Error("Bad Request: too many requests"));
       mocked.clearPinnedMessageId.mockClear();
 
-      await pinnedMessageManager.restoreExistingSession("ses-1", "Restored session");
+      await restoreSession("ses-1", "Restored session");
 
       expect(fakeApi.unpinChatMessage).toHaveBeenCalledWith(123, 777);
       expect(mocked.clearPinnedMessageId).not.toHaveBeenCalled();
@@ -1068,7 +1071,7 @@ describe("pinned/manager", () => {
         new Error("Bad Request: message to unpin not found"),
       );
 
-      await pinnedMessageManager.restoreExistingSession("ses-1", "Restored session");
+      await restoreSession("ses-1", "Restored session");
 
       expect(pinnedMessageManager.getState().messageId).toBeNull();
       expect(mocked.clearPinnedMessageId).toHaveBeenCalled();
@@ -1091,7 +1094,7 @@ describe("pinned/manager", () => {
       fakeApi.unpinChatMessage.mockRejectedValue(new Error("Bad Request: too many requests"));
       mocked.clearPinnedMessageId.mockClear();
 
-      await pinnedMessageManager.restoreExistingSession("ses-1", "Restored session");
+      await restoreSession("ses-1", "Restored session");
       await pinnedMessageManager.clear();
 
       expect(mocked.clearPinnedMessageId).not.toHaveBeenCalled();
@@ -1177,7 +1180,7 @@ describe("pinned/manager", () => {
       mocked.getCurrentSession.mockReturnValue(undefined);
       pinnedMessageManager.initialize(fakeApi as never, 123);
       fakeApi.unpinChatMessage.mockRejectedValueOnce(new Error("Bad Request: too many requests"));
-      await pinnedMessageManager.restoreExistingSession("ses-1", "Restored session");
+      await restoreSession("ses-1", "Restored session");
       fakeApi.unpinChatMessage.mockResolvedValue(undefined);
       mocked.clearPinnedMessageId.mockClear();
 
@@ -1288,6 +1291,296 @@ describe("pinned/manager", () => {
       expect(fakeApi.sendMessage).toHaveBeenCalledTimes(1);
       expect(fakeApi.pinChatMessage).toHaveBeenCalledWith(123, 1004, {
         disable_notification: true,
+      });
+    });
+  });
+
+  describe("drawing a session dashboard once its values are loaded", () => {
+    const history = (input: number, cost: number) => ({
+      data: [
+        {
+          info: {
+            role: "assistant",
+            tokens: { input, cache: { read: 0 } },
+            cost,
+            time: { created: 1 },
+          },
+          parts: [],
+        },
+      ],
+    });
+
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((done) => {
+        resolve = done;
+      });
+      return { promise, resolve };
+    }
+
+    async function showSession(sessionId: string, title: string): Promise<void> {
+      await pinnedMessageManager.onSessionChange(sessionId, title, { directory: "D:/repo" });
+    }
+
+    const tokens = (input: number) => ({
+      input,
+      output: 0,
+      reasoning: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    });
+
+    it("sends a switched-to session's dashboard already carrying its context, cost and files", async () => {
+      mocked.opencodeClient.session.messages.mockResolvedValue(history(12000, 0.5));
+      mocked.opencodeClient.session.diff.mockResolvedValue({
+        data: [{ file: "D:/repo/src/a.ts", additions: 3, deletions: 1 }],
+      });
+
+      await showSession("ses-1", "Test Session");
+
+      expect(fakeApi.sendMessage).toHaveBeenCalledTimes(1);
+      const sent = fakeApi.sendMessage.mock.calls[0]?.[1] as string;
+      expect(sent).toContain("12000/204800");
+      expect(sent).toContain("$0.50");
+      expect(sent).toContain("src/a.ts (+3 -1)");
+      expect(fakeApi.editMessageText).not.toHaveBeenCalled();
+    });
+
+    it("leaves the previous dashboard untouched and draws updates since the load in the first send", async () => {
+      await showSession("ses-1", "First");
+      fakeApi.sendMessage.mockClear();
+      fakeApi.editMessageText.mockClear();
+      fakeApi.sendMessage.mockResolvedValue({ message_id: 1000 });
+      mocked.opencodeClient.session.messages.mockResolvedValue(history(5000, 0.25));
+
+      await pinnedMessageManager.prepareSessionChange("ses-2", "Second", { directory: "D:/repo" });
+      pinnedMessageManager.updateTokensSilent(tokens(7000));
+      pinnedMessageManager.addFileChange({
+        file: "D:/repo/src/new.ts",
+        additions: 2,
+        deletions: 0,
+      });
+      await pinnedMessageManager.onCostUpdate(0.25);
+      expect(fakeApi.editMessageText).not.toHaveBeenCalled();
+
+      await pinnedMessageManager.showPreparedSession();
+
+      const sent = fakeApi.sendMessage.mock.calls[0]?.[1] as string;
+      expect(sent).toContain("Second");
+      expect(sent).toContain("7000/204800");
+      expect(sent).toContain("$0.50");
+      expect(sent).toContain("src/new.ts (+2)");
+      expect(fakeApi.editMessageText).not.toHaveBeenCalled();
+    });
+
+    it("sends only the last session's dashboard when a second change supersedes a loading one", async () => {
+      const slow = deferred<{ data: never[] }>();
+      mocked.opencodeClient.session.messages.mockReturnValueOnce(slow.promise);
+
+      const first = showSession("ses-1", "First");
+      await showSession("ses-2", "Second");
+      slow.resolve({ data: [] });
+      await first;
+
+      expect(fakeApi.sendMessage).toHaveBeenCalledTimes(1);
+      expect(fakeApi.sendMessage.mock.calls[0]?.[1]).toContain("Second");
+      expect(pinnedMessageManager.getState().sessionId).toBe("ses-2");
+    });
+
+    it("keeps the held session when a loading change is dropped", async () => {
+      await showSession("ses-1", "First");
+      fakeApi.sendMessage.mockClear();
+      const slow = deferred<{ data: never[] }>();
+      mocked.opencodeClient.session.messages.mockReturnValueOnce(slow.promise);
+
+      const change = showSession("ses-2", "Second");
+      pinnedMessageManager.dropPendingPrepare();
+      slow.resolve({ data: [] });
+      await change;
+
+      expect(fakeApi.sendMessage).not.toHaveBeenCalled();
+      expect(pinnedMessageManager.getState().sessionId).toBe("ses-1");
+      expect(pinnedMessageManager.getState().messageId).toBe(999);
+    });
+
+    it("sends nothing when the dashboard is cleared while a change loads", async () => {
+      const slow = deferred<{ data: never[] }>();
+      mocked.opencodeClient.session.messages.mockReturnValueOnce(slow.promise);
+
+      const change = showSession("ses-1", "First");
+      await pinnedMessageManager.clear();
+      slow.resolve({ data: [] });
+      await change;
+
+      expect(fakeApi.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it("sends what did load when the history fails on a switch", async () => {
+      mocked.opencodeClient.session.messages.mockResolvedValue({ data: undefined, error: "boom" });
+      mocked.opencodeClient.session.diff.mockResolvedValue({
+        data: [{ file: "D:/repo/src/a.ts", additions: 1, deletions: 0 }],
+      });
+
+      await showSession("ses-1", "Test Session");
+
+      const sent = fakeApi.sendMessage.mock.calls[0]?.[1] as string;
+      expect(sent).toContain("0/204800");
+      expect(sent).toContain("src/a.ts (+1)");
+    });
+
+    it("sends a session created a moment ago at once, without loading anything", async () => {
+      await pinnedMessageManager.onSessionChange("ses-1", "Fresh", {
+        directory: "D:/repo",
+        created: true,
+      });
+
+      expect(fakeApi.sendMessage).toHaveBeenCalledTimes(1);
+      expect(mocked.opencodeClient.session.messages).not.toHaveBeenCalled();
+      expect(mocked.opencodeClient.session.diff).not.toHaveBeenCalled();
+    });
+
+    it("re-sends a renamed session with the values it holds, without reloading them", async () => {
+      mocked.opencodeClient.session.messages.mockResolvedValue(history(9000, 1));
+      await showSession("ses-1", "Old title");
+      pinnedMessageManager.addFileChange({ file: "D:/repo/src/a.ts", additions: 4, deletions: 0 });
+      mocked.opencodeClient.session.messages.mockClear();
+      fakeApi.sendMessage.mockClear();
+
+      await showSession("ses-1", "New title");
+
+      expect(mocked.opencodeClient.session.messages).not.toHaveBeenCalled();
+      const sent = fakeApi.sendMessage.mock.calls[0]?.[1] as string;
+      expect(sent).toContain("New title");
+      expect(sent).toContain("9000/204800");
+      expect(sent).toContain("$1.00");
+      expect(sent).toContain("src/a.ts (+4)");
+    });
+
+    it("answers a wait for the values only once no change is loading", async () => {
+      const slowFirst = deferred<{ data: never[] }>();
+      const slowSecond = deferred<{ data: never[] }>();
+      mocked.opencodeClient.session.messages
+        .mockReturnValueOnce(slowFirst.promise)
+        .mockReturnValueOnce(slowSecond.promise);
+      const waited = vi.fn();
+
+      const first = showSession("ses-1", "First");
+      void pinnedMessageManager.waitForSessionValues().then(waited);
+      const second = showSession("ses-2", "Second");
+      slowFirst.resolve({ data: [] });
+      await first;
+      await Promise.resolve();
+      expect(waited).not.toHaveBeenCalled();
+
+      slowSecond.resolve({ data: [] });
+      await second;
+      await vi.waitFor(() => expect(waited).toHaveBeenCalled());
+    });
+
+    it("defers event redraws to the render scheduler while values apply at once", async () => {
+      await showSession("ses-1", "Test Session");
+      fakeApi.editMessageText.mockClear();
+      const queued: Array<() => Promise<void>> = [];
+      pinnedMessageManager.setRenderScheduler(async (render) => {
+        queued.push(render);
+      });
+
+      await pinnedMessageManager.onCostUpdate(0.75);
+
+      expect(pinnedMessageManager.getState().cost).toBe(0.75);
+      expect(fakeApi.editMessageText).not.toHaveBeenCalled();
+      await queued[0]?.();
+      expect(fakeApi.editMessageText).toHaveBeenCalledWith(
+        123,
+        999,
+        expect.stringContaining("$0.75"),
+      );
+    });
+
+    describe("restoring after a restart", () => {
+      beforeEach(() => {
+        mocked.getPinnedMessageId.mockReturnValue(777);
+        pinnedMessageManager.initialize(fakeApi as never, 123);
+      });
+
+      it("edits the persisted dashboard once, with the loaded values", async () => {
+        mocked.opencodeClient.session.messages.mockResolvedValue(history(3000, 0));
+
+        await restoreSession("ses-1", "Restored session");
+
+        expect(fakeApi.editMessageText).toHaveBeenCalledTimes(1);
+        expect(fakeApi.editMessageText).toHaveBeenCalledWith(
+          123,
+          777,
+          expect.stringContaining("3000/204800"),
+        );
+      });
+
+      it("leaves the dashboard as it is when a part fails, and completes on the next restore", async () => {
+        mocked.opencodeClient.session.diff.mockRejectedValueOnce(new Error("boom"));
+        mocked.opencodeClient.session.messages
+          .mockResolvedValueOnce({ data: undefined, error: "boom" })
+          .mockResolvedValue(history(3000, 0));
+
+        await restoreSession("ses-1", "Restored session");
+        await pinnedMessageManager.onCostUpdate(0.5);
+
+        expect(fakeApi.editMessageText).not.toHaveBeenCalled();
+        expect(pinnedMessageManager.getState().sessionId).toBeNull();
+
+        await restoreSession("ses-1", "Restored session");
+
+        expect(fakeApi.editMessageText).toHaveBeenCalledTimes(1);
+        expect(pinnedMessageManager.getState().sessionId).toBe("ses-1");
+      });
+    });
+
+    describe("refreshing the held values", () => {
+      beforeEach(() => {
+        mocked.getCurrentSession.mockReturnValue({ id: "ses-1", title: "T", directory: "D:/repo" });
+      });
+
+      it("edits the dashboard to the reloaded values", async () => {
+        await showSession("ses-1", "Test Session");
+        mocked.opencodeClient.session.messages.mockResolvedValue(history(4000, 0));
+
+        await pinnedMessageManager.refreshSessionValues();
+
+        expect(fakeApi.editMessageText).toHaveBeenLastCalledWith(
+          123,
+          999,
+          expect.stringContaining("4000/204800"),
+        );
+      });
+
+      it("drops its result when an update arrives while it loads", async () => {
+        await showSession("ses-1", "Test Session");
+        fakeApi.editMessageText.mockClear();
+        const slow = deferred<ReturnType<typeof history>>();
+        mocked.opencodeClient.session.messages.mockReturnValueOnce(slow.promise);
+
+        const refresh = pinnedMessageManager.refreshSessionValues();
+        pinnedMessageManager.updateTokensSilent(tokens(8000));
+        slow.resolve(history(4000, 0));
+        await refresh;
+
+        expect(pinnedMessageManager.getState().tokensUsed).toBe(8000);
+        expect(fakeApi.editMessageText).not.toHaveBeenCalled();
+      });
+
+      it("does not cancel a session change that is loading", async () => {
+        await showSession("ses-1", "First");
+        const slow = deferred<{ data: never[] }>();
+        mocked.opencodeClient.session.messages.mockReturnValueOnce(slow.promise);
+        fakeApi.sendMessage.mockClear();
+
+        const change = showSession("ses-2", "Second");
+        await pinnedMessageManager.refreshSessionValues();
+        slow.resolve({ data: [] });
+        await change;
+
+        expect(fakeApi.sendMessage).toHaveBeenCalledTimes(1);
+        expect(fakeApi.sendMessage.mock.calls[0]?.[1]).toContain("Second");
       });
     });
   });

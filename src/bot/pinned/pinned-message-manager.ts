@@ -28,6 +28,25 @@ import {
 } from "./pinned-message-format.js";
 import { getSessionStreamThrottleMs } from "../streaming/stream-throttle.js";
 
+type SessionHistory = NonNullable<
+  Awaited<ReturnType<typeof opencodeClient.session.messages>>["data"]
+>;
+type SessionDiff = NonNullable<Awaited<ReturnType<typeof opencodeClient.session.diff>>["data"]>;
+
+/** A session's dashboard values as loaded from OpenCode; a part is null when its load failed. */
+interface LoadedSessionValues {
+  context: { tokensUsed: number; cost: number } | null;
+  changedFiles: FileChange[] | null;
+}
+
+/** A session committed to the held state whose dashboard is not drawn yet. */
+interface PreparedSession {
+  generation: number;
+  kind: "change" | "restore";
+}
+
+export type PinnedRenderScheduler = (render: () => Promise<void>) => Promise<void>;
+
 export class PinnedMessageManager {
   private api: Api | null = null;
   private chatId: number | null = null;
@@ -57,6 +76,11 @@ export class PinnedMessageManager {
   private pendingForceUpdate = false;
   private lastRenderedMessageText: string | null = null;
   private leftoverUnpinMessageId: number | null = null;
+  private sessionGeneration = 0;
+  private preparing: Promise<void> | null = null;
+  private prepared: PreparedSession | null = null;
+  private valueUpdateCount = 0;
+  private renderScheduler: PinnedRenderScheduler = (render) => render();
 
   /**
    * Initialize manager with bot API and chat ID
@@ -78,81 +102,221 @@ export class PinnedMessageManager {
   }
 
   /**
-   * Called when session changes - create new pinned message
+   * Called when session changes - send a new pinned message once its values are loaded
    */
-  async onSessionChange(sessionId: string, sessionTitle: string): Promise<void> {
+  async onSessionChange(
+    sessionId: string,
+    sessionTitle: string,
+    options: { directory?: string; created?: boolean } = {},
+  ): Promise<void> {
+    await this.prepareSessionChange(sessionId, sessionTitle, options);
+    await this.showPreparedSession();
+  }
+
+  /**
+   * Load a session's context, cost and files and commit them to the held state, without drawing.
+   * The previous dashboard is no longer edited from here on; it stays pinned until the new one
+   * is shown. The held session keeps its values (a rename re-sends them); a session created a
+   * moment ago has nothing to load.
+   */
+  async prepareSessionChange(
+    sessionId: string,
+    sessionTitle: string,
+    options: { directory?: string; created?: boolean } = {},
+  ): Promise<void> {
     logger.info(`[PinnedManager] Session changed: ${sessionId}, title: ${sessionTitle}`);
 
-    if (!getPinnedDashboardEnabled()) {
-      await this.dropOwnedDashboardQuietly();
+    const generation = ++this.sessionGeneration;
+    const sameSession = this.state.sessionId === sessionId;
+
+    await this.trackPrepare(async () => {
+      if (!getPinnedDashboardEnabled()) {
+        await this.dropOwnedDashboardQuietly();
+      }
+
+      const values =
+        sameSession || options.created
+          ? null
+          : await this.loadSessionValues(sessionId, this.resolveDirectory(options.directory));
+      if (generation !== this.sessionGeneration) {
+        logger.debug(`[PinnedManager] Dropping superseded session change: ${sessionId}`);
+        return;
+      }
+
+      if (!sameSession) {
+        this.state.tokensUsed = values?.context?.tokensUsed ?? 0;
+        this.state.cost = values?.context?.cost ?? 0;
+        this.state.changedFiles = values?.changedFiles ?? [];
+      }
+      this.commitSessionIdentity(sessionId, sessionTitle);
+      this.state.messageId = null;
+
+      await this.refreshProjectMetadata();
+      await this.fetchContextLimit();
+      if (generation !== this.sessionGeneration) {
+        return;
+      }
+
+      this.notifyKeyboard();
+      this.prepared = { generation, kind: "change" };
+    });
+  }
+
+  /**
+   * Load the values of the session a persisted pinned message belongs to, without drawing.
+   * Nothing is committed unless both the context and the files loaded, so the message on
+   * screen is left as it is and the next attach retries.
+   */
+  async prepareRestore(sessionId: string, sessionTitle: string, directory?: string): Promise<void> {
+    logger.info(`[PinnedManager] Restoring existing pinned message for session: ${sessionId}`);
+
+    const generation = ++this.sessionGeneration;
+
+    await this.trackPrepare(async () => {
+      if (!getPinnedDashboardEnabled()) {
+        await this.dropOwnedDashboardQuietly();
+      }
+
+      const values = await this.loadSessionValues(sessionId, this.resolveDirectory(directory));
+      if (generation !== this.sessionGeneration) {
+        logger.debug(`[PinnedManager] Dropping superseded restore: ${sessionId}`);
+        return;
+      }
+
+      if (!values.context || !values.changedFiles) {
+        logger.warn(
+          `[PinnedManager] Session values did not fully load; leaving the pinned message as it is: ${sessionId}`,
+        );
+        return;
+      }
+
+      this.state.tokensUsed = values.context.tokensUsed;
+      this.state.cost = values.context.cost;
+      this.state.changedFiles = values.changedFiles;
+      this.commitSessionIdentity(sessionId, sessionTitle);
+
+      await this.refreshProjectMetadata();
+      await this.fetchContextLimit();
+      if (generation !== this.sessionGeneration) {
+        return;
+      }
+
+      this.notifyKeyboard();
+      this.prepared = { generation, kind: "restore" };
+    });
+  }
+
+  /**
+   * Draw the session prepared last: send and pin a new dashboard after a change, or edit the
+   * persisted one once after a restore. Does nothing when a newer change superseded it.
+   */
+  async showPreparedSession(): Promise<void> {
+    const prepared = this.prepared;
+    if (!prepared || prepared.generation !== this.sessionGeneration) {
+      return;
     }
+    this.prepared = null;
 
-    // Reset tokens for new session
-    this.state.tokensUsed = 0;
-    this.state.cost = 0;
-
-    // Update state
-    this.state.sessionId = sessionId;
-    this.state.sessionTitle = sessionTitle || t("pinned.default_session_title");
-    this.state.attachActive = false;
-    this.state.attachBusy = false;
-
-    await this.refreshProjectMetadata();
-
-    // Fetch context limit for current model
-    await this.fetchContextLimit();
-
-    // Trigger keyboard update callback with reset context (0 tokens)
-    if (this.onKeyboardUpdateCallback && this.state.tokensLimit > 0) {
-      this.onKeyboardUpdateCallback(this.state.tokensUsed, this.state.tokensLimit);
-    }
-
-    // Reset changed files for new session
-    this.state.changedFiles = [];
-    this.lastRenderedMessageText = null;
-    this.pendingUpdate = false;
-    this.pendingForceUpdate = false;
-
-    if (getPinnedDashboardEnabled()) {
+    if (prepared.kind === "change" && getPinnedDashboardEnabled()) {
       await this.unpinOldMessage();
       await this.createPinnedMessage();
     }
     this.fillContextLimitWhenListed();
 
-    await this.loadDiffsFromApi(sessionId);
+    // Draws an update that landed while the message was being sent, or the restored values.
+    await this.updatePinnedMessage();
+  }
+
+  /** Cancels a session change or restore still loading, so it never draws. */
+  dropPendingPrepare(): void {
+    if (this.preparing) {
+      this.sessionGeneration++;
+    }
+  }
+
+  /** Resolves once no session change or restore is loading. */
+  async waitForSessionValues(): Promise<void> {
+    while (this.preparing) {
+      await this.preparing.catch(() => {});
+    }
   }
 
   /**
-   * Restore in-memory state for a persisted pinned message without creating a new Telegram message.
+   * Reload the held session's values and draw them. Never cancels a session change: it is
+   * skipped while one loads, and its result is dropped when an update or a change arrives
+   * meanwhile — the held values are then at least as fresh.
    */
-  async restoreExistingSession(sessionId: string, sessionTitle: string): Promise<void> {
-    logger.info(`[PinnedManager] Restoring existing pinned message for session: ${sessionId}`);
-
-    if (!getPinnedDashboardEnabled()) {
-      await this.dropOwnedDashboardQuietly();
+  async refreshSessionValues(): Promise<void> {
+    const sessionId = this.state.sessionId;
+    if (!sessionId || this.preparing) {
+      return;
     }
 
+    const session = getCurrentSession();
+    const directory = this.resolveDirectory(
+      session?.id === sessionId ? session.directory : undefined,
+    );
+    const generation = this.sessionGeneration;
+    const updateCount = this.valueUpdateCount;
+
+    const values = await this.loadSessionValues(sessionId, directory);
+    if (
+      generation !== this.sessionGeneration ||
+      updateCount !== this.valueUpdateCount ||
+      this.state.sessionId !== sessionId
+    ) {
+      logger.debug(`[PinnedManager] Dropping session values refresh: ${sessionId}`);
+      return;
+    }
+
+    if (values.context) {
+      this.state.tokensUsed = values.context.tokensUsed;
+      this.state.cost = values.context.cost;
+    }
+    if (values.changedFiles) {
+      this.state.changedFiles = values.changedFiles;
+    }
+    await this.updatePinnedMessage();
+  }
+
+  /**
+   * Route the redraws caused by session events through the given scheduler, so they can wait
+   * while the chat's outbound messages are held. Values are applied at once regardless.
+   */
+  setRenderScheduler(scheduler: PinnedRenderScheduler): void {
+    this.renderScheduler = scheduler;
+  }
+
+  private async trackPrepare(prepare: () => Promise<void>): Promise<void> {
+    const task = prepare();
+    this.preparing = task;
+    try {
+      await task;
+    } finally {
+      if (this.preparing === task) {
+        this.preparing = null;
+      }
+    }
+  }
+
+  private commitSessionIdentity(sessionId: string, sessionTitle: string): void {
     this.state.sessionId = sessionId;
     this.state.sessionTitle = sessionTitle || t("pinned.default_session_title");
     this.state.attachActive = false;
     this.state.attachBusy = false;
-    this.state.changedFiles = [];
     this.lastRenderedMessageText = null;
     this.pendingUpdate = false;
     this.pendingForceUpdate = false;
+  }
 
-    await this.refreshProjectMetadata();
-    await this.fetchContextLimit();
-
+  private notifyKeyboard(): void {
     if (this.onKeyboardUpdateCallback && this.state.tokensLimit > 0) {
       this.onKeyboardUpdateCallback(this.state.tokensUsed, this.state.tokensLimit);
     }
+  }
 
-    if (getPinnedDashboardEnabled()) {
-      await this.updatePinnedMessage(true);
-    }
-    this.fillContextLimitWhenListed();
-    await this.loadDiffsFromApi(sessionId);
+  private resolveDirectory(directory: string | undefined): string | undefined {
+    return directory ?? getCurrentProject()?.worktree;
   }
 
   /**
@@ -181,6 +345,27 @@ export class PinnedMessageManager {
    * Load context token usage from session history
    */
   async loadContextFromHistory(sessionId: string, directory: string): Promise<void> {
+    const history = await this.fetchSessionHistory(sessionId, directory);
+    if (!history) {
+      return;
+    }
+
+    const context = this.readContextFromHistory(history);
+    this.state.tokensUsed = context.tokensUsed;
+    this.state.cost = context.cost;
+    this.state.sessionId = sessionId;
+
+    logger.info(
+      `[PinnedManager] Loaded context from history: ${this.state.tokensUsed} tokens, cost: $${this.state.cost.toFixed(2)}`,
+    );
+
+    await this.updatePinnedMessage();
+  }
+
+  private async fetchSessionHistory(
+    sessionId: string,
+    directory: string,
+  ): Promise<SessionHistory | null> {
     try {
       logger.debug(`[PinnedManager] Loading context from history for session: ${sessionId}`);
 
@@ -195,70 +380,69 @@ export class PinnedMessageManager {
         } else {
           logger.warn("[PinnedManager] Failed to load session history:", error);
         }
-        return;
+        return null;
       }
 
-      // Get the latest measured context size and total cost from session history
-      // Context = input + cache.read (cache.read contains previously cached context)
-      let latestContextSize = 0;
-      let latestContextCreated = Number.NEGATIVE_INFINITY;
-      let totalCost = 0;
-      logger.debug(`[PinnedManager] Processing ${messagesData.length} messages from history`);
-
-      messagesData.forEach(({ info }) => {
-        if (info.role === "assistant") {
-          const assistantInfo = info as {
-            summary?: boolean;
-            tokens?: {
-              input: number;
-              cache?: { read: number };
-            };
-            time?: { created?: number };
-            cost?: number;
-          };
-
-          // Skip summary messages (technical, not real agent responses)
-          if (assistantInfo.summary) {
-            logger.debug(`[PinnedManager] Skipping summary message`);
-            return;
-          }
-
-          const input = assistantInfo.tokens?.input || 0;
-          const cacheRead = assistantInfo.tokens?.cache?.read || 0;
-          const contextSize = input + cacheRead;
-          const cost = assistantInfo.cost || 0;
-
-          logger.debug(
-            `[PinnedManager] Assistant message: input=${input}, cache.read=${cacheRead}, total=${contextSize}, cost=$${cost.toFixed(2)}`,
-          );
-
-          const created = assistantInfo.time?.created ?? 0;
-          if (contextSize > 0 && created >= latestContextCreated) {
-            latestContextSize = contextSize;
-            latestContextCreated = created;
-          }
-
-          // Accumulate total session cost
-          totalCost += cost;
-        }
-      });
-
-      this.state.tokensUsed = latestContextSize;
-      this.state.cost = totalCost;
-      this.state.sessionId = sessionId;
-
-      logger.info(
-        `[PinnedManager] Loaded context from history: ${this.state.tokensUsed} tokens, cost: $${this.state.cost.toFixed(2)}`,
-      );
-
-      await this.updatePinnedMessage();
+      return messagesData;
     } catch (err) {
       if (isExpectedOpencodeUnavailableError(err)) {
         logger.warn("[PinnedManager] OpenCode server unavailable; skipping session history load");
       } else {
         logger.error("[PinnedManager] Error loading context from history:", err);
       }
+      return null;
     }
+  }
+
+  /**
+   * The latest measured context size and the total cost in a session's history.
+   * Context = input + cache.read (cache.read contains previously cached context).
+   */
+  private readContextFromHistory(history: SessionHistory): { tokensUsed: number; cost: number } {
+    let latestContextSize = 0;
+    let latestContextCreated = Number.NEGATIVE_INFINITY;
+    let totalCost = 0;
+    logger.debug(`[PinnedManager] Processing ${history.length} messages from history`);
+
+    history.forEach(({ info }) => {
+      if (info.role === "assistant") {
+        const assistantInfo = info as {
+          summary?: boolean;
+          tokens?: {
+            input: number;
+            cache?: { read: number };
+          };
+          time?: { created?: number };
+          cost?: number;
+        };
+
+        // Skip summary messages (technical, not real agent responses)
+        if (assistantInfo.summary) {
+          logger.debug(`[PinnedManager] Skipping summary message`);
+          return;
+        }
+
+        const input = assistantInfo.tokens?.input || 0;
+        const cacheRead = assistantInfo.tokens?.cache?.read || 0;
+        const contextSize = input + cacheRead;
+        const cost = assistantInfo.cost || 0;
+
+        logger.debug(
+          `[PinnedManager] Assistant message: input=${input}, cache.read=${cacheRead}, total=${contextSize}, cost=$${cost.toFixed(2)}`,
+        );
+
+        const created = assistantInfo.time?.created ?? 0;
+        if (contextSize > 0 && created >= latestContextCreated) {
+          latestContextSize = contextSize;
+          latestContextCreated = created;
+        }
+
+        // Accumulate total session cost
+        totalCost += cost;
+      }
+    });
+
+    return { tokensUsed: latestContextSize, cost: totalCost };
   }
 
   /**
@@ -275,24 +459,27 @@ export class PinnedMessageManager {
    * Called when assistant message completes with token info
    */
   async onMessageComplete(tokens: TokensInfo): Promise<void> {
-    // Ensure context limit is available even if session was restored
-    // without a fresh onSessionChange call (for example after /abort + continue).
-    if (this.getContextLimit() === 0) {
-      await this.fetchContextLimit();
-    }
-
     // Context = input + cache.read (cache.read contains previously cached context)
     // This represents the actual context window usage
     this.state.tokensUsed = tokens.input + tokens.cacheRead;
+    this.valueUpdateCount++;
 
     logger.debug(
       `[PinnedManager] Tokens updated: ${this.state.tokensUsed}/${this.state.tokensLimit}`,
     );
 
-    // Also fetch latest session title (it may have changed after first message)
-    await this.refreshSessionTitle();
+    await this.renderScheduler(async () => {
+      // Ensure context limit is available even if session was restored
+      // without a fresh onSessionChange call (for example after /abort + continue).
+      if (this.getContextLimit() === 0) {
+        await this.fetchContextLimit();
+      }
 
-    await this.updatePinnedMessage();
+      // Also fetch latest session title (it may have changed after first message)
+      await this.refreshSessionTitle();
+
+      await this.updatePinnedMessage();
+    });
   }
 
   /**
@@ -302,6 +489,7 @@ export class PinnedMessageManager {
    */
   updateTokensSilent(tokens: TokensInfo): void {
     this.state.tokensUsed = tokens.input + tokens.cacheRead;
+    this.valueUpdateCount++;
     logger.debug(
       `[PinnedManager] Tokens updated (silent): ${this.state.tokensUsed}/${this.state.tokensLimit}`,
     );
@@ -327,10 +515,11 @@ export class PinnedMessageManager {
 
     const currentCost = this.state.cost || 0;
     this.state.cost = currentCost + cost;
+    this.valueUpdateCount++;
     logger.debug(
       `[PinnedManager] Cost added: $${cost.toFixed(2)}, total session: $${(this.state.cost || 0).toFixed(2)}`,
     );
-    await this.updatePinnedMessage();
+    await this.renderScheduler(() => this.updatePinnedMessage());
   }
 
   /**
@@ -394,6 +583,7 @@ export class PinnedMessageManager {
     }
 
     this.state.changedFiles = diffs;
+    this.valueUpdateCount++;
     logger.debug(`[PinnedManager] Session diff updated: ${diffs.length} files`);
     this.scheduleDebouncedUpdate();
   }
@@ -409,6 +599,7 @@ export class PinnedMessageManager {
     } else {
       this.state.changedFiles.push(change);
     }
+    this.valueUpdateCount++;
     logger.debug(
       `[PinnedManager] File change added: ${change.file} (+${change.additions} -${change.deletions}), total: ${this.state.changedFiles.length}`,
     );
@@ -425,196 +616,179 @@ export class PinnedMessageManager {
     const delayMs = getSessionStreamThrottleMs(this.state.sessionId ?? "");
     this.updateDebounceTimer = setTimeout(() => {
       this.updateDebounceTimer = null;
-      void this.updatePinnedMessage();
+      void this.renderScheduler(() => this.updatePinnedMessage());
     }, delayMs);
   }
 
   /**
-   * Load file diffs from API for current session.
-   * Tries session.diff() first, falls back to parsing session.messages() tool parts.
+   * Load a session's context, cost and changed files in parallel, without touching the held
+   * state. Files come from session.diff(), or from the history's tool parts when it is empty.
    */
-  private async loadDiffsFromApi(sessionId: string): Promise<void> {
+  private async loadSessionValues(
+    sessionId: string,
+    directory: string | undefined,
+  ): Promise<LoadedSessionValues> {
+    if (!directory) {
+      logger.debug(
+        `[PinnedManager] No project directory; skipping session values load: ${sessionId}`,
+      );
+      return { context: null, changedFiles: null };
+    }
+
+    const [history, diff] = await Promise.all([
+      this.fetchSessionHistory(sessionId, directory),
+      this.fetchSessionDiff(sessionId, directory),
+    ]);
+
+    let changedFiles: FileChange[] | null = null;
+    if (diff && diff.length > 0) {
+      changedFiles = diff
+        .filter((d): d is typeof d & { file: string } => !!d.file)
+        .map((d) => ({
+          file: d.file,
+          additions: d.additions,
+          deletions: d.deletions,
+        }));
+      logger.info(`[PinnedManager] Loaded ${changedFiles.length} file diffs from session.diff()`);
+    } else if (history) {
+      changedFiles = this.readFileChangesFromHistory(history);
+      logger.info(`[PinnedManager] Loaded ${changedFiles.length} file diffs from messages`);
+    }
+
+    return {
+      context: history ? this.readContextFromHistory(history) : null,
+      changedFiles,
+    };
+  }
+
+  private async fetchSessionDiff(
+    sessionId: string,
+    directory: string,
+  ): Promise<SessionDiff | null> {
     try {
-      const project = getCurrentProject();
-      if (!project) {
-        logger.debug("[PinnedManager] loadDiffsFromApi: no project");
-        return;
-      }
+      logger.debug(`[PinnedManager] Loading file diffs for session: ${sessionId}`);
 
-      logger.debug(`[PinnedManager] loadDiffsFromApi: trying session.diff() for ${sessionId}`);
-
-      // Try session.diff() API first
       const { data, error } = await opencodeClient.session.diff({
         sessionID: sessionId,
-        directory: project.worktree,
+        directory,
       });
 
       logger.debug(
         `[PinnedManager] session.diff() result: error=${!!error}, data.length=${data?.length ?? 0}`,
       );
 
-      if (!error && data && data.length > 0) {
-        this.state.changedFiles = data
-          .filter((d): d is typeof d & { file: string } => !!d.file)
-          .map((d) => ({
-            file: d.file,
-            additions: d.additions,
-            deletions: d.deletions,
-          }));
-        logger.info(
-          `[PinnedManager] Loaded ${this.state.changedFiles.length} file diffs from session.diff()`,
-        );
-        await this.updatePinnedMessage();
-        return;
-      }
-
-      // Fallback: parse tool parts from session messages
-      logger.debug("[PinnedManager] session.diff() empty, trying loadDiffsFromMessages()");
-      await this.loadDiffsFromMessages(sessionId, project.worktree);
+      return error || !data ? null : data;
     } catch (err) {
       if (isExpectedOpencodeUnavailableError(err)) {
         logger.debug("[PinnedManager] OpenCode server unavailable; skipping diff restore");
       } else {
         logger.debug("[PinnedManager] Could not load diffs from API:", err);
       }
+      return null;
     }
   }
 
   /**
-   * Fallback: extract file changes from session message tool parts
+   * Extract file changes from a session's completed edit/write/apply_patch tool parts
    */
-  private async loadDiffsFromMessages(sessionId: string, directory: string): Promise<void> {
-    try {
-      logger.debug(`[PinnedManager] loadDiffsFromMessages: fetching messages for ${sessionId}`);
+  private readFileChangesFromHistory(history: SessionHistory): FileChange[] {
+    const filesMap = new Map<string, FileChange>();
 
-      const { data: messagesData, error } = await opencodeClient.session.messages({
-        sessionID: sessionId,
-        directory,
-      });
+    let toolCount = 0;
+    let fileToolCount = 0;
 
-      if (error || !messagesData) {
-        if (isExpectedOpencodeUnavailableError(error)) {
-          logger.debug("[PinnedManager] OpenCode server unavailable; skipping diff message restore");
-        } else {
-          logger.debug(`[PinnedManager] loadDiffsFromMessages: error or no data`);
-        }
-        return;
-      }
+    for (const { parts } of history) {
+      for (const part of parts) {
+        if (part.type !== "tool") continue;
+        toolCount++;
 
-      logger.debug(`[PinnedManager] loadDiffsFromMessages: ${messagesData.length} messages`);
-
-      const filesMap = new Map<string, FileChange>();
-
-      let toolCount = 0;
-      let fileToolCount = 0;
-
-      for (const { parts } of messagesData) {
-        for (const part of parts) {
-          if (part.type !== "tool") continue;
-          toolCount++;
-
-          const toolPart = part as {
-            tool: string;
-            state: {
-              status: string;
-              input?: { [key: string]: unknown };
-              metadata?: { [key: string]: unknown };
-            };
+        const toolPart = part as {
+          tool: string;
+          state: {
+            status: string;
+            input?: { [key: string]: unknown };
+            metadata?: { [key: string]: unknown };
           };
+        };
 
-          if (toolPart.state.status !== "completed") continue;
+        if (toolPart.state.status !== "completed") continue;
 
-          if (
-            toolPart.tool === "edit" ||
-            toolPart.tool === "write" ||
-            toolPart.tool === "apply_patch"
-          ) {
-            fileToolCount++;
-          }
+        if (
+          toolPart.tool === "edit" ||
+          toolPart.tool === "write" ||
+          toolPart.tool === "apply_patch"
+        ) {
+          fileToolCount++;
+        }
 
-          const patchChanges =
-            toolPart.tool === "apply_patch" ? getPatchFileChanges(toolPart.state.metadata) : [];
+        const patchChanges =
+          toolPart.tool === "apply_patch" ? getPatchFileChanges(toolPart.state.metadata) : [];
 
-          if (patchChanges.length > 0) {
-            for (const change of patchChanges) {
-              const existing = filesMap.get(change.path);
-              if (existing) {
-                existing.additions += change.additions;
-                existing.deletions += change.deletions;
-              } else {
-                filesMap.set(change.path, {
-                  file: change.path,
-                  additions: change.additions,
-                  deletions: change.deletions,
-                });
-              }
-            }
-          } else if (
-            (toolPart.tool === "edit" || toolPart.tool === "apply_patch") &&
-            toolPart.state.metadata &&
-            "filediff" in toolPart.state.metadata
-          ) {
-            const filediff = toolPart.state.metadata.filediff as {
-              file?: string;
-              additions?: number;
-              deletions?: number;
-            };
-            if (filediff.file) {
-              const existing = filesMap.get(filediff.file);
-              if (existing) {
-                existing.additions += filediff.additions || 0;
-                existing.deletions += filediff.deletions || 0;
-              } else {
-                filesMap.set(filediff.file, {
-                  file: filediff.file,
-                  additions: filediff.additions || 0,
-                  deletions: filediff.deletions || 0,
-                });
-              }
-            }
-          } else if (
-            toolPart.tool === "write" &&
-            toolPart.state.input &&
-            "filePath" in toolPart.state.input &&
-            "content" in toolPart.state.input
-          ) {
-            const filePath = toolPart.state.input.filePath as string;
-            const content = toolPart.state.input.content as string;
-            const lines = content.split("\n").length;
-            const existing = filesMap.get(filePath);
+        if (patchChanges.length > 0) {
+          for (const change of patchChanges) {
+            const existing = filesMap.get(change.path);
             if (existing) {
-              existing.additions += lines;
+              existing.additions += change.additions;
+              existing.deletions += change.deletions;
             } else {
-              filesMap.set(filePath, {
-                file: filePath,
-                additions: lines,
-                deletions: 0,
+              filesMap.set(change.path, {
+                file: change.path,
+                additions: change.additions,
+                deletions: change.deletions,
               });
             }
           }
+        } else if (
+          (toolPart.tool === "edit" || toolPart.tool === "apply_patch") &&
+          toolPart.state.metadata &&
+          "filediff" in toolPart.state.metadata
+        ) {
+          const filediff = toolPart.state.metadata.filediff as {
+            file?: string;
+            additions?: number;
+            deletions?: number;
+          };
+          if (filediff.file) {
+            const existing = filesMap.get(filediff.file);
+            if (existing) {
+              existing.additions += filediff.additions || 0;
+              existing.deletions += filediff.deletions || 0;
+            } else {
+              filesMap.set(filediff.file, {
+                file: filediff.file,
+                additions: filediff.additions || 0,
+                deletions: filediff.deletions || 0,
+              });
+            }
+          }
+        } else if (
+          toolPart.tool === "write" &&
+          toolPart.state.input &&
+          "filePath" in toolPart.state.input &&
+          "content" in toolPart.state.input
+        ) {
+          const filePath = toolPart.state.input.filePath as string;
+          const content = toolPart.state.input.content as string;
+          const lines = content.split("\n").length;
+          const existing = filesMap.get(filePath);
+          if (existing) {
+            existing.additions += lines;
+          } else {
+            filesMap.set(filePath, {
+              file: filePath,
+              additions: lines,
+              deletions: 0,
+            });
+          }
         }
       }
-
-      logger.debug(
-        `[PinnedManager] loadDiffsFromMessages: found ${toolCount} tool parts, ${fileToolCount} file tools`,
-      );
-
-      if (filesMap.size > 0) {
-        this.state.changedFiles = Array.from(filesMap.values());
-        logger.info(
-          `[PinnedManager] Loaded ${this.state.changedFiles.length} file diffs from messages`,
-        );
-        await this.updatePinnedMessage();
-      } else {
-        logger.debug("[PinnedManager] loadDiffsFromMessages: no file changes found");
-      }
-    } catch (err) {
-      if (isExpectedOpencodeUnavailableError(err)) {
-        logger.debug("[PinnedManager] OpenCode server unavailable; skipping diff message restore");
-      } else {
-        logger.debug("[PinnedManager] Could not load diffs from messages:", err);
-      }
     }
+
+    logger.debug(
+      `[PinnedManager] readFileChangesFromHistory: found ${toolCount} tool parts, ${fileToolCount} file tools`,
+    );
+
+    return Array.from(filesMap.values());
   }
 
   /**
@@ -1044,7 +1218,8 @@ export class PinnedMessageManager {
       return;
     }
 
-    if (!this.api || !this.chatId || !this.state.messageId) {
+    // Nothing to draw before the session is known (a restart whose values did not load yet).
+    if (!this.api || !this.chatId || !this.state.messageId || !this.state.sessionId) {
       return;
     }
 
@@ -1053,8 +1228,11 @@ export class PinnedMessageManager {
       this.pendingForceUpdate = true;
     }
 
-    if (this.updateTask) {
+    // A flush that already finished its loop would miss this update: wait, then flush again.
+    while (this.updateTask) {
       await this.updateTask;
+    }
+    if (!this.pendingUpdate) {
       return;
     }
 
@@ -1170,6 +1348,9 @@ export class PinnedMessageManager {
    * Clear pinned message (when switching projects)
    */
   async clear(): Promise<void> {
+    this.sessionGeneration++;
+    this.prepared = null;
+
     if (!getPinnedDashboardEnabled()) {
       await this.dropOwnedDashboardQuietly();
     }

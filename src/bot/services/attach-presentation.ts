@@ -22,7 +22,13 @@ export function createAttachPresentation(
   const { keyboardManager, pinnedMessageManager } = deps;
 
   return {
-    async ensurePinnedSession({ api, chatId, session, forceFullRestore = false }) {
+    async preparePinnedSession({
+      api,
+      chatId,
+      session,
+      forceFullRestore = false,
+      sessionCreated = false,
+    }) {
       if (!pinnedMessageManager.isInitialized()) {
         pinnedMessageManager.initialize(api, chatId);
       }
@@ -31,6 +37,8 @@ export function createAttachPresentation(
 
       const pinnedState = pinnedMessageManager.getState();
       if (pinnedState.sessionId === session.id && pinnedState.messageId) {
+        // Back to the session on screen: a change still loading must not replace its dashboard.
+        pinnedMessageManager.dropPendingPrepare();
         if (forceFullRestore) {
           await pinnedMessageManager.loadContextFromHistory(session.id, session.directory);
         }
@@ -38,12 +46,16 @@ export function createAttachPresentation(
       }
 
       if (pinnedState.messageId && pinnedState.sessionId === null) {
-        await pinnedMessageManager.restoreExistingSession(session.id, session.title);
+        await pinnedMessageManager.prepareRestore(session.id, session.title, session.directory);
       } else {
-        await pinnedMessageManager.onSessionChange(session.id, session.title);
+        await pinnedMessageManager.prepareSessionChange(session.id, session.title, {
+          directory: session.directory,
+          created: sessionCreated,
+        });
       }
-
-      await pinnedMessageManager.loadContextFromHistory(session.id, session.directory);
+    },
+    async showPinnedSession() {
+      await pinnedMessageManager.showPreparedSession();
 
       const contextInfo = pinnedMessageManager.getContextInfo();
       if (contextInfo) {

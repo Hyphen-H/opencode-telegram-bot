@@ -23,6 +23,7 @@ const mocked = vi.hoisted(() => ({
   pinnedGetContextLimitMock: vi.fn(),
   pinnedRefreshContextLimitMock: vi.fn(),
   pinnedGetContextInfoMock: vi.fn(),
+  pinnedWaitForSessionValuesMock: vi.fn(),
   sendBotTextMock: vi.fn(),
   loggerDebugMock: vi.fn(),
   loggerInfoMock: vi.fn(),
@@ -87,6 +88,7 @@ function createDeps() {
       getContextLimit: mocked.pinnedGetContextLimitMock,
       refreshContextLimit: mocked.pinnedRefreshContextLimitMock,
       getContextInfo: mocked.pinnedGetContextInfoMock,
+      waitForSessionValues: mocked.pinnedWaitForSessionValuesMock,
     } as never,
   });
 }
@@ -108,6 +110,8 @@ describe("bot/commands/status-command", () => {
     mocked.pinnedGetContextLimitMock.mockReset();
     mocked.pinnedRefreshContextLimitMock.mockReset();
     mocked.pinnedGetContextInfoMock.mockReset();
+    mocked.pinnedWaitForSessionValuesMock.mockReset();
+    mocked.pinnedWaitForSessionValuesMock.mockResolvedValue(undefined);
     mocked.sendBotTextMock.mockReset();
     mocked.loggerDebugMock.mockReset();
     mocked.loggerInfoMock.mockReset();
@@ -127,6 +131,26 @@ describe("bot/commands/status-command", () => {
     mocked.pinnedRefreshContextLimitMock.mockResolvedValue(undefined);
     mocked.pinnedGetContextInfoMock.mockReturnValue(null);
     mocked.sendBotTextMock.mockResolvedValue(undefined);
+  });
+
+  it("reads the session's context only once its values have loaded", async () => {
+    let loaded = false;
+    mocked.pinnedWaitForSessionValuesMock.mockImplementation(async () => {
+      loaded = true;
+    });
+    mocked.pinnedGetContextInfoMock.mockImplementation(() =>
+      loaded ? { tokensUsed: 5000, tokensLimit: 10000 } : { tokensUsed: 0, tokensLimit: 10000 },
+    );
+    const ctx = {
+      chat: { id: 42, type: "private" },
+      message: { text: "/status" },
+      api: {},
+      reply: vi.fn(),
+    } as unknown as Context;
+
+    await statusCommand(ctx as never, createDeps());
+
+    expect(mocked.keyboardUpdateContextMock).toHaveBeenCalledWith(5000, 10000);
   });
 
   it("includes bot and OpenCode versions and omits health and audio replies", async () => {

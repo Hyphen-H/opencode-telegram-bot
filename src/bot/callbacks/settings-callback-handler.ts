@@ -27,6 +27,7 @@ import {
 import { t } from "../../i18n/index.js";
 import { opencodeServerVersion } from "../../opencode/client.js";
 import { logger } from "../../utils/logger.js";
+import { safeBackgroundTask } from "../../utils/safe-background-task.js";
 import { appendInlineMenuCancelButton, ensureActiveInlineMenu } from "../menus/inline-menu.js";
 import {
   buildSettingsMenuView,
@@ -179,6 +180,13 @@ export async function handleSettingsCallback(
       }
       await deps.pinnedMessageManager.applyPinnedDashboardEnabled(nextEnabled);
       setPinnedDashboardEnabled(nextEnabled);
+      if (nextEnabled) {
+        // Sent at once from what the bot holds; corrected once the session's values load.
+        safeBackgroundTask({
+          taskName: "settings.refreshPinnedDashboard",
+          task: () => deps.pinnedMessageManager.refreshSessionValues(),
+        });
+      }
       const { text, keyboard } = buildSettingsMenuView();
       await ctx.answerCallbackQuery({ text: t("settings.saved") });
       await ctx.editMessageText(text, {
