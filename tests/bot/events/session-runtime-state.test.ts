@@ -161,6 +161,19 @@ describe("bot/events/session-runtime-state", () => {
         "card-fg",
       ]);
     });
+
+    it("stops only the background commands and keeps following the subagent cards", () => {
+      addBackground("session-1");
+
+      runtime.stopBackgroundCommands("test", "session-1");
+
+      expect(runtime.runningToolTracker.backgroundCallIds("session-1")).toEqual([]);
+      expect(runtime.getRunningToolInfo("session-1", "call-bg")).toBeUndefined();
+      expect(runtime.getSubagentSnapshot("session-1")?.map((card) => card.cardId)).toEqual([
+        "card-bg",
+        "card-fg",
+      ]);
+    });
   });
 
   it("keeps a session's entries apart from a same-named call in another session", () => {

@@ -15,9 +15,9 @@ import {
   subscribeToEvents,
   type ReconnectInfo,
 } from "../../opencode/events.js";
-import type { ToolInfo } from "../../app/managers/summary-aggregation-manager.js";
 import { closeQuestionNotAnswered } from "../menus/question-menu.js";
 import { SessionRuntimeState } from "../events/session-runtime-state.js";
+import { buildFailedToolEvent } from "../events/failed-tool-event.js";
 import type {
   SessionTargetPolicy,
   TelegramDestination,
@@ -35,6 +35,8 @@ export interface BotEventSubscriptionService {
   setTelegramContext(bot: Bot<Context> | null, chatId: number | null): void;
   clearRuntimeState(reason: string): void;
   stopBackgroundOperations(reason: string, sessionId?: string): void;
+  stopBackgroundCommands(reason: string, sessionId?: string): void;
+  interruptSubagents(reason: string): void;
   endRunLostWithServer(reason: string): Promise<void>;
   cleanup(reason: string): void;
 }
@@ -54,34 +56,6 @@ export type EventSubscriptionServiceDeps = Pick<
   | "scheduledTaskRuntime"
   | "summaryAggregator"
 >;
-
-/** The failure OpenCode reports for a call it stopped, built for a call whose server went away. */
-function buildFailedToolEvent(tool: ToolInfo, now: number): Event {
-  const start = "time" in tool.state && tool.state.time ? tool.state.time.start : now;
-  return {
-    id: `${tool.callId}:lost`,
-    type: "message.part.updated",
-    properties: {
-      sessionID: tool.sessionId,
-      part: {
-        id: tool.callId,
-        sessionID: tool.sessionId,
-        messageID: tool.messageId,
-        type: "tool",
-        callID: tool.callId,
-        tool: tool.tool,
-        state: {
-          status: "error",
-          input: tool.input ?? {},
-          error: "",
-          ...(tool.metadata ? { metadata: tool.metadata } : {}),
-          time: { start, end: now },
-        },
-      },
-      time: now,
-    },
-  };
-}
 
 /** The idle OpenCode sends for an interrupted execution, marked the way the V2 adapter does. */
 function buildInterruptedIdleEvents(sessionId: string): Event[] {
@@ -143,6 +117,15 @@ class EventSubscriptionService implements BotEventSubscriptionService {
     this.runtime.stopBackgroundOperations(reason, sessionId);
   };
 
+  stopBackgroundCommands = (reason: string, sessionId?: string): void => {
+    this.runtime.stopBackgroundCommands(reason, sessionId);
+  };
+
+  interruptSubagents = (reason: string): void => {
+    logger.debug(`[Bot] Interrupting running subagent cards: reason=${reason}`);
+    this.deps.summaryAggregator.interruptSubagents();
+  };
+
   cleanup(reason: string): void {
     stopEventListening();
     this.deps.summaryAggregator.clear();
@@ -196,7 +179,8 @@ class EventSubscriptionService implements BotEventSubscriptionService {
   /**
    * Ends the followed session's run in the chat the way `/abort` does, for a V2 server that
    * ended it without saying so (stopped or restarted): the poll on screen closes as not
-   * answered, then the events OpenCode sends on an abort — each running call failed, then
+   * answered, running subagent cards end interrupted, then the events OpenCode sends on an
+   * abort — each running call failed, then
    * an interrupted idle — go through the usual pipeline. Everything up to the first await
    * runs at once, so events that arrive later are handled after the ending.
    */
@@ -213,35 +197,31 @@ class EventSubscriptionService implements BotEventSubscriptionService {
         ? closeQuestionNotAnswered(destination.api, destination.chatId, deps)
         : Promise.resolve();
 
-    // The server took every session's background operations with it.
-    this.stopBackgroundOperations(reason);
-    deps.summaryAggregator.forgetLiveTurn();
+    // The server took every session's background commands with it.
+    this.stopBackgroundCommands(reason);
+    const { summaryAggregator } = deps;
+    summaryAggregator.forgetLiveTurn();
+
+    summaryAggregator.holdOutbound();
+    // Every subagent card still running ends with the server and is no longer followed; one
+    // the server resumes gets a new card.
+    summaryAggregator.interruptSubagents(true);
 
     const sessionId = getCurrentSession()?.id;
-    if (!sessionId) {
-      await pollClosed;
-      return;
-    }
+    const runningTools = sessionId ? runtime.getRunningToolInfos(sessionId) : [];
+    if (sessionId && (deps.assistantRunState.hasRun(sessionId) || runningTools.length > 0)) {
+      logger.info(
+        `[Bot] Ending the run lost with the OpenCode server: session=${sessionId}, runningTools=${runningTools.length}, reason=${reason}`,
+      );
+      deps.assistantRunState.clearRun(sessionId, reason);
 
-    const runningTools = runtime.getRunningToolInfos(sessionId);
-    if (!deps.assistantRunState.hasRun(sessionId) && runningTools.length === 0) {
-      await pollClosed;
-      return;
-    }
-
-    logger.info(
-      `[Bot] Ending the run lost with the OpenCode server: session=${sessionId}, runningTools=${runningTools.length}, reason=${reason}`,
-    );
-    deps.assistantRunState.clearRun(sessionId, reason);
-
-    const { summaryAggregator } = deps;
-    summaryAggregator.holdOutbound();
-    const now = Date.now();
-    for (const tool of runningTools) {
-      summaryAggregator.processEvent(buildFailedToolEvent(tool, now));
-    }
-    for (const event of buildInterruptedIdleEvents(sessionId)) {
-      summaryAggregator.processEvent(event);
+      const now = Date.now();
+      for (const tool of runningTools) {
+        summaryAggregator.processEvent(buildFailedToolEvent(tool, now));
+      }
+      for (const event of buildInterruptedIdleEvents(sessionId)) {
+        summaryAggregator.processEvent(event);
+      }
     }
 
     await Promise.all([pollClosed, summaryAggregator.drainOutbound(0)]);

@@ -1160,6 +1160,62 @@ describe("bot/services/event-subscription-service", () => {
       );
     });
 
+    function emitAbortError(summaryAggregator: { processEvent(event: Event): void }): void {
+      summaryAggregator.processEvent({
+        type: "session.error",
+        properties: {
+          sessionID: "session-1",
+          error: { name: "MessageAbortedError", data: { message: "Aborted" } },
+        },
+      } as unknown as Event);
+    }
+
+    it("ends a running subagent card interrupted, in place, when the run is stopped", async () => {
+      const { api, summaryAggregator } = await setupService(false);
+      let nextMessageId = 500;
+      api.sendMessage.mockImplementation(async () => ({ message_id: nextMessageId++ }));
+
+      useTrackerFakeTimers();
+      emitSubagentStart(summaryAggregator);
+      emitSubagentModel(summaryAggregator);
+      emitSubagentTool(summaryAggregator);
+      await flushPendingDispatch();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      emitAbortError(summaryAggregator);
+      await flushPendingDispatch();
+
+      const cardSends = api.sendMessage.mock.calls.filter((call) => String(call[1]).includes("🧩"));
+      expect(cardSends).toHaveLength(1);
+      const cardMessageId = (await api.sendMessage.mock.results[
+        api.sendMessage.mock.calls.indexOf(cardSends[0]!)
+      ]?.value)?.message_id;
+      const lastCardText = String(
+        api.editMessageText.mock.calls.filter((call) => call[1] === cardMessageId).at(-1)?.[2],
+      );
+      expect(lastCardText.split("\n").at(-1)).toMatch(/^⏹ Interrupted · 🕒 \d+s$/);
+
+      const sentBefore = collectSentTexts(api).length;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(collectSentTexts(api)).toHaveLength(sentBefore);
+    });
+
+    it("drops the running mark of a foreground line when OpenCode V1 stops the run", async () => {
+      const { api, summaryAggregator } = await setupService(false);
+
+      useTrackerFakeTimers();
+      emitBashTool(summaryAggregator, "running");
+      await vi.advanceTimersByTimeAsync(ELAPSED_SETTLE_MS);
+
+      emitAbortError(summaryAggregator);
+      await flushPendingDispatch();
+
+      const lastText = collectSentTexts(api).filter((text) => text.includes("npm test")).at(-1);
+      expect(lastText).toBeDefined();
+      expect(lastText).not.toContain("⏳");
+      expect(lastText).toContain("· 🕒 29s");
+    });
+
     it("sends overlapping subagents as independent card messages", async () => {
       const { api, summaryAggregator } = await setupService(false);
 

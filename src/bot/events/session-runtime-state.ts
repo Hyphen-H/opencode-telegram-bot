@@ -592,6 +592,12 @@ export class SessionRuntimeState {
    * cards stay as they are and a later completion no longer changes them.
    */
   stopBackgroundOperations(reason: string, sessionId?: string): void {
+    this.stopBackgroundCommands(reason, sessionId);
+    this.stopBackgroundSubagents(sessionId);
+  }
+
+  /** The command half of `stopBackgroundOperations`: subagent cards keep being followed. */
+  stopBackgroundCommands(reason: string, sessionId?: string): void {
     const callIds = this.runningToolTracker.backgroundCallIds(sessionId);
     for (const callId of callIds) {
       this.runningToolTracker.release(callId);
@@ -602,8 +608,19 @@ export class SessionRuntimeState {
       }
     }
 
-    this.toolCallStreamer.freezePinnedEntries(sessionId);
+    this.toolCallStreamer.freezePinnedEntries(sessionId, false);
     this.compactProgressStreamer.dropBackgroundOperations(sessionId);
+
+    if (callIds.length > 0) {
+      logger.debug(
+        `[Bot] Stopped background operations: session=${sessionId ?? "all"}, count=${callIds.length}, reason=${reason}`,
+      );
+    }
+  }
+
+  /** The subagent-card half of `stopBackgroundOperations`. */
+  private stopBackgroundSubagents(sessionId?: string): void {
+    this.toolCallStreamer.freezePinnedEntries(sessionId, true);
     for (const [snapshotSessionId, subagents] of Array.from(this.subagentSnapshots)) {
       if (sessionId === undefined || snapshotSessionId === sessionId) {
         this.setKeptSubagents(
@@ -611,12 +628,6 @@ export class SessionRuntimeState {
           subagents.filter((subagent) => !subagent.background),
         );
       }
-    }
-
-    if (callIds.length > 0) {
-      logger.debug(
-        `[Bot] Stopped background operations: session=${sessionId ?? "all"}, count=${callIds.length}, reason=${reason}`,
-      );
     }
   }
 

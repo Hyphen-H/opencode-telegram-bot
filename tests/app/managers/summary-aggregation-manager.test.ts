@@ -818,6 +818,209 @@ describe("summary/aggregator", () => {
       expect(onSubagent.mock.calls).toHaveLength(callsAfterStop);
     });
 
+    describe("an interrupted subagent", () => {
+      function emitInterruptedIdle(sessionID: string): void {
+        summaryAggregator.processEvent({
+          type: "session.idle",
+          properties: { sessionID, interrupted: true },
+        } as unknown as Event);
+      }
+
+      function emitError(sessionID: string, error: Record<string, unknown>): void {
+        summaryAggregator.processEvent({
+          type: "session.error",
+          properties: { sessionID, error },
+        } as unknown as Event);
+      }
+
+      const abortError = { name: "MessageAbortedError", data: { message: "Aborted" } };
+
+      function lastCards(onSubagent: ReturnType<typeof vi.fn>) {
+        return onSubagent.mock.lastCall?.[1] as Array<Record<string, unknown>>;
+      }
+
+      it("ends the card interrupted when OpenCode V2 interrupts the subagent", () => {
+        const onSubagent = vi.fn();
+        summaryAggregator.setOnSubagent(onSubagent);
+        startSubagent();
+        emitChildTool("call-1");
+
+        emitInterruptedIdle("child-session-1");
+
+        expect(lastCards(onSubagent)[0]).toMatchObject({
+          status: "interrupted",
+          finishedAt: expect.any(Number),
+          currentTool: undefined,
+        });
+      });
+
+      it("ends the card interrupted, not failed, on an OpenCode V1 abort error", () => {
+        const onSubagent = vi.fn();
+        summaryAggregator.setOnSubagent(onSubagent);
+        startSubagent();
+        emitChildTool("call-1");
+
+        emitError("child-session-1", abortError);
+
+        expect(lastCards(onSubagent)[0]).toMatchObject({
+          status: "interrupted",
+          terminalMessage: undefined,
+        });
+      });
+
+      it("still ends a genuinely failed subagent with its error", () => {
+        const onSubagent = vi.fn();
+        summaryAggregator.setOnSubagent(onSubagent);
+        startSubagent();
+
+        emitError("child-session-1", { name: "UnknownError", data: { message: "boom" } });
+
+        expect(lastCards(onSubagent)[0]).toMatchObject({ status: "error", terminalMessage: "boom" });
+      });
+
+      it("ends running cards, nested ones included, when the parent run is interrupted", () => {
+        const onSubagent = vi.fn();
+        summaryAggregator.setOnSubagent(onSubagent);
+        startSubagent();
+        emitChildTool("call-1");
+        summaryAggregator.processEvent({
+          type: "session.created",
+          properties: {
+            info: {
+              id: "grandchild-session-1",
+              parentID: "child-session-1",
+              title: "nested task (@general subagent)",
+              slug: "grandchild",
+              directory: "D:/repo",
+              projectID: "p1",
+              version: "1",
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as unknown as Event);
+
+        emitInterruptedIdle("root-session");
+
+        const cards = lastCards(onSubagent);
+        expect(cards).toHaveLength(2);
+        expect(cards.map((card) => card.status)).toEqual(["interrupted", "interrupted"]);
+
+        const callsAfterInterrupt = onSubagent.mock.calls.length;
+        emitChildTool("call-2");
+        emitIdle("child-session-1");
+        expect(onSubagent.mock.calls).toHaveLength(callsAfterInterrupt);
+      });
+
+      it("ends running cards when the parent run stops with an OpenCode V1 abort error", () => {
+        const onSubagent = vi.fn();
+        summaryAggregator.setOnSubagent(onSubagent);
+        startSubagent();
+        emitChildTool("call-1");
+
+        emitError("root-session", abortError);
+
+        expect(lastCards(onSubagent)[0]).toMatchObject({ status: "interrupted" });
+      });
+
+      it("leaves cards running when the parent run simply ends", () => {
+        const onSubagent = vi.fn();
+        summaryAggregator.setOnSubagent(onSubagent);
+        startSubagent();
+        emitChildTool("call-1");
+
+        emitIdle("root-session");
+
+        expect(lastCards(onSubagent)[0]).toMatchObject({ status: "running" });
+      });
+
+      it("keeps a background card followed, ignoring its activity, until its real end", () => {
+        const onSubagent = vi.fn();
+        summaryAggregator.setOnSubagent(onSubagent);
+        startSubagent();
+        launchInBackground();
+        emitChildTool("call-1");
+
+        summaryAggregator.interruptSubagents();
+        const interrupted = lastCards(onSubagent)[0]!;
+        expect(interrupted).toMatchObject({ status: "interrupted", background: true });
+
+        const callsAfterInterrupt = onSubagent.mock.calls.length;
+        emitChildTool("call-2");
+        emitIdle("root-session");
+        expect(onSubagent.mock.calls).toHaveLength(callsAfterInterrupt);
+
+        vi.spyOn(Date, "now").mockReturnValue((interrupted.finishedAt as number) + 5_000);
+        try {
+          emitIdle("child-session-1");
+        } finally {
+          vi.restoreAllMocks();
+        }
+
+        expect(lastCards(onSubagent)[0]).toMatchObject({
+          status: "completed",
+          finishedAt: (interrupted.finishedAt as number) + 5_000,
+        });
+      });
+
+      it("switches an interrupted background card to the failure its subagent reports", () => {
+        const onSubagent = vi.fn();
+        summaryAggregator.setOnSubagent(onSubagent);
+        startSubagent();
+        launchInBackground();
+
+        summaryAggregator.interruptSubagents();
+        emitError("child-session-1", { name: "UnknownError", data: { message: "boom" } });
+
+        expect(lastCards(onSubagent)[0]).toMatchObject({ status: "error", terminalMessage: "boom" });
+      });
+
+      it("keeps an interrupted background card as it is when its subagent is interrupted too", () => {
+        const onSubagent = vi.fn();
+        summaryAggregator.setOnSubagent(onSubagent);
+        startSubagent();
+        launchInBackground();
+
+        summaryAggregator.interruptSubagents();
+        const callsAfterInterrupt = onSubagent.mock.calls.length;
+        emitInterruptedIdle("child-session-1");
+        emitIdle("child-session-1");
+
+        expect(onSubagent.mock.calls).toHaveLength(callsAfterInterrupt);
+      });
+
+      it("does not touch a card that already ended", () => {
+        const onSubagent = vi.fn();
+        summaryAggregator.setOnSubagent(onSubagent);
+        startSubagent();
+        emitIdle("child-session-1");
+        const callsAfterEnd = onSubagent.mock.calls.length;
+
+        summaryAggregator.interruptSubagents();
+        summaryAggregator.interruptSubagents(true);
+
+        expect(onSubagent.mock.calls).toHaveLength(callsAfterEnd);
+      });
+
+      it("gives a subagent resumed after a server restart a new card", () => {
+        const onSubagent = vi.fn();
+        summaryAggregator.setOnSubagent(onSubagent);
+        startSubagent();
+        launchInBackground();
+        emitChildTool("call-1");
+
+        summaryAggregator.interruptSubagents(true);
+        const interrupted = lastCards(onSubagent)[0]!;
+        expect(interrupted.status).toBe("interrupted");
+
+        emitChildTool("call-2");
+
+        const resumed = lastCards(onSubagent);
+        expect(resumed).toHaveLength(1);
+        expect(resumed[0]).toMatchObject({ status: "running", currentToolCallId: "call-2" });
+        expect(resumed[0]!.cardId).not.toBe(interrupted.cardId);
+      });
+    });
+
     function emitTaskPart(state: Record<string, unknown>): void {
       summaryAggregator.processEvent({
         type: "message.part.updated",
@@ -2536,7 +2739,9 @@ describe("summary/aggregator", () => {
 
     await new Promise<void>((resolve) => setImmediate(resolve));
 
-    expect(onSessionError).toHaveBeenCalledWith("session-1", "Model not found: opencode/foo.");
+    expect(onSessionError).toHaveBeenCalledWith("session-1", "Model not found: opencode/foo.", {
+      interrupted: false,
+    });
   });
 
   it("reports session.status retry through callback", async () => {
@@ -3752,7 +3957,9 @@ describe("summary/aggregator", () => {
 
       await new Promise<void>((resolve) => setImmediate(resolve));
 
-      expect(onSessionError).toHaveBeenCalledWith("session-1", "Unknown session error");
+      expect(onSessionError).toHaveBeenCalledWith("session-1", "Unknown session error", {
+        interrupted: false,
+      });
       expect(warnSpy).toHaveBeenCalled();
     });
 
@@ -3772,7 +3979,9 @@ describe("summary/aggregator", () => {
 
       await new Promise<void>((resolve) => setImmediate(resolve));
 
-      expect(onSessionError).toHaveBeenCalledWith("session-1", "upstream exploded");
+      expect(onSessionError).toHaveBeenCalledWith("session-1", "upstream exploded", {
+        interrupted: false,
+      });
       expect(warnSpy).toHaveBeenCalled();
     });
 

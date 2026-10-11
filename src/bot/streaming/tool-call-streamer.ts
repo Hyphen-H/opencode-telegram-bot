@@ -6,6 +6,7 @@ import {
 
 const TELEGRAM_MESSAGE_SAFE_LENGTH = 4000;
 const DEFAULT_STREAM_KEY = "default";
+const SUBAGENT_STREAM_KEY_PREFIX = "subagent:";
 
 export type ToolStreamKey = "default" | "todo" | `subagent:${string}`;
 
@@ -233,9 +234,18 @@ export class ToolCallStreamer {
     this.pinnedEntries.delete(this.getEntryId(sessionId, streamKey, prefix.trim()));
   }
 
-  /** Pinned entries of a session (or of all sessions) stop taking updates and stay as they are. */
-  freezePinnedEntries(sessionId?: string): void {
+  /**
+   * Pinned entries of a session (or of all sessions) stop taking updates and stay as they
+   * are. `subagentCards` limits this to the subagent cards (true) or to everything else (false).
+   */
+  freezePinnedEntries(sessionId?: string, subagentCards?: boolean): void {
     for (const entryId of Array.from(this.pinnedEntries)) {
+      if (
+        subagentCards !== undefined &&
+        entryId.includes(`:${SUBAGENT_STREAM_KEY_PREFIX}`) !== subagentCards
+      ) {
+        continue;
+      }
       if (sessionId === undefined || entryId.startsWith(`${sessionId}:`)) {
         this.pinnedEntries.delete(entryId);
         this.frozenToolEntries.add(entryId);

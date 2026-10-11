@@ -89,6 +89,81 @@ function emitTool(
   } as unknown as Event);
 }
 
+function startSubagent(container: AppContainer, background = false): void {
+  const { summaryAggregator } = container;
+  summaryAggregator.processEvent({
+    type: "message.part.updated",
+    properties: {
+      part: {
+        id: "root-task",
+        sessionID: "session-1",
+        messageID: "message-1",
+        type: "tool",
+        callID: "call-task",
+        tool: "task",
+        state: {
+          status: "running",
+          input: { description: "slow sleeper", subagent_type: "general", background },
+          metadata: { sessionId: "child-1" },
+          time: { start: Date.now() },
+        },
+      },
+    },
+  } as unknown as Event);
+  summaryAggregator.processEvent({
+    type: "session.created",
+    properties: {
+      info: {
+        id: "child-1",
+        parentID: "session-1",
+        title: "slow sleeper (@general subagent)",
+        slug: "child",
+        directory: "D:/repo",
+        projectID: "p1",
+        version: "1",
+        time: { created: Date.now(), updated: Date.now() },
+      },
+    },
+  } as unknown as Event);
+  summaryAggregator.processEvent({
+    type: "message.updated",
+    properties: {
+      info: {
+        id: "child-message-1",
+        sessionID: "child-1",
+        role: "assistant",
+        agent: "general",
+        providerID: "openai",
+        modelID: "gpt-5.4",
+        time: { created: Date.now() },
+      },
+    },
+  } as unknown as Event);
+  summaryAggregator.processEvent({
+    type: "message.part.updated",
+    properties: {
+      part: {
+        id: "child-tool-1",
+        sessionID: "child-1",
+        messageID: "child-message-1",
+        type: "tool",
+        callID: "child-call-1",
+        tool: "bash",
+        state: {
+          status: "running",
+          input: { command: "sleep 40" },
+          metadata: {},
+          time: { start: Date.now() },
+        },
+      },
+    },
+  } as unknown as Event);
+}
+
+function lastCardText(api: FakeBotApi): string {
+  return collectSentTexts(api).filter((text) => text.includes("🧩")).at(-1) ?? "";
+}
+
 async function settle(): Promise<void> {
   for (let attempt = 0; attempt < 5; attempt++) {
     await new Promise((resolve) => setImmediate(resolve));
@@ -216,6 +291,39 @@ describe("bot/services/event-subscription-service lost run", () => {
     const pollEdit = api.editMessageText.mock.calls.find((call) => call[1] === 700);
     expect(JSON.stringify(pollEdit)).toContain(t("question.not_answered"));
     expect(container.questionManager.isActive()).toBe(false);
+  });
+
+  it("ends a running subagent card interrupted, timed to when the server went away", async () => {
+    startSubagent(container);
+    await settle();
+    expect(lastCardText(api)).toContain("sleep 40");
+
+    const ending = service!.endRunLostWithServer("opencode_restarted");
+    await settle();
+    await ending;
+
+    expect(lastCardText(api).split("\n").at(-1)).toMatch(/^⏹ Interrupted · 🕒 \d+s$/);
+    const sentBefore = collectSentTexts(api).length;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(collectSentTexts(api)).toHaveLength(sentBefore);
+  });
+
+  it("ends a background subagent card interrupted even when the session holds no run", async () => {
+    startSubagent(container, true);
+    await settle();
+    container.summaryAggregator.processEvent({
+      type: "session.idle",
+      properties: { sessionID: "session-1" },
+    } as unknown as Event);
+    await settle();
+    container.assistantRunState.clearRun("session-1", "test");
+    expect(lastCardText(api)).toContain("sleep 40");
+
+    const ending = service!.endRunLostWithServer("opencode_restarted");
+    await settle();
+    await ending;
+
+    expect(lastCardText(api).split("\n").at(-1)).toMatch(/^⏹ Interrupted · 🕒 \d+m/);
   });
 
   it("does nothing to the chat when nothing of the session runs", async () => {

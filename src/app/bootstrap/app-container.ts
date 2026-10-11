@@ -69,6 +69,13 @@ export interface AppContainer {
   resetRuntimeStreams(reason: string): void;
   /** Stops following background operations; their lines and cards stay as they are. */
   stopBackgroundOperations(reason: string, sessionId?: string): void;
+  /** Stops following background command lines only; subagent cards keep being followed. */
+  stopBackgroundCommands(reason: string, sessionId?: string): void;
+  /**
+   * Ends the followed session's running subagent cards as interrupted; a background one
+   * still takes the real end its subagent reports later.
+   */
+  interruptSubagents(reason: string): void;
   /**
    * On V2, ends the followed session's run in the chat as after `/abort` once its server
    * is gone: the poll on screen closes as not answered, running lines end, no footer.
@@ -146,6 +153,9 @@ export function createAppContainer(): AppContainer {
     resetRuntimeStreams: (reason) => eventSubscriptionService.clearRuntimeState(reason),
     stopBackgroundOperations: (reason, sessionId) =>
       eventSubscriptionService.stopBackgroundOperations(reason, sessionId),
+    stopBackgroundCommands: (reason, sessionId) =>
+      eventSubscriptionService.stopBackgroundCommands(reason, sessionId),
+    interruptSubagents: (reason) => eventSubscriptionService.interruptSubagents(reason),
     endRunLostWithServer: (reason) => eventSubscriptionService.endRunLostWithServer(reason),
 
     cleanupProcess: (reason) => {

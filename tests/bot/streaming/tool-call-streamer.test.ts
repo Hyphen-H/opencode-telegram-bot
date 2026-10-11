@@ -745,6 +745,34 @@ describe("bot/streaming/tool-call-streamer", () => {
       expect(editText).not.toHaveBeenCalled();
       expect(sendText).toHaveBeenCalledTimes(1);
     });
+
+    it("freezes either the pinned subagent cards or the other pinned lines", async () => {
+      vi.useFakeTimers();
+      const { streamer, editText } = createStreamer();
+
+      streamer.replaceByPrefix("s1", "⏳bg", "⏳ bg");
+      streamer.pinEntry("s1", "⏳bg");
+      streamer.replaceByPrefix("s1", "🧩", "🧩 card running", "subagent:card-1");
+      streamer.pinEntry("s1", "🧩", "subagent:card-1");
+      await vi.advanceTimersByTimeAsync(500);
+      await streamer.breakSession("s1", "session_idle");
+
+      streamer.freezePinnedEntries("s1", false);
+      streamer.replaceByPrefix("s1", "⏳bg", "bg done");
+      streamer.replaceByPrefix("s1", "🧩", "🧩 card ended", "subagent:card-1");
+      await vi.advanceTimersByTimeAsync(500);
+
+      const edits = editText.mock.calls.map((call) => String(call[2]));
+      expect(edits).toContain("🧩 card ended");
+      expect(edits).not.toContain("bg done");
+
+      streamer.freezePinnedEntries("s1", true);
+      streamer.replaceByPrefix("s1", "🧩", "🧩 card changed again", "subagent:card-1");
+      await vi.advanceTimersByTimeAsync(500);
+      expect(editText.mock.calls.map((call) => String(call[2]))).not.toContain(
+        "🧩 card changed again",
+      );
+    });
   });
 
   it("reads throttleMs again for the next flush cycle", async () => {

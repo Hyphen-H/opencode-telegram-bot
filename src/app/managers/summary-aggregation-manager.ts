@@ -137,7 +137,7 @@ type TokensCallback = (sessionId: string, tokens: TokensInfo, isCompleted: boole
 
 type CostCallback = (sessionId: string, cost: number) => void;
 
-export type SubagentStatus = "pending" | "running" | "completed" | "error";
+export type SubagentStatus = "pending" | "running" | "completed" | "error" | "interrupted";
 
 export interface SubagentInfo {
   cardId: string;
@@ -166,11 +166,16 @@ export interface SubagentInfo {
   updatedAt: number;
 }
 
-type SubagentCallback = (sessionId: string, subagents: SubagentInfo[]) => void;
+type SubagentCallback = (sessionId: string, subagents: SubagentInfo[]) => void | Promise<void>;
 
 type SessionCompactedCallback = (sessionId: string, directory: string) => void;
 
-type SessionErrorCallback = (sessionId: string, message: string) => void;
+export interface SessionErrorInfo {
+  /** The run was stopped (OpenCode V1 reports a stop as an abort error), not failed. */
+  interrupted: boolean;
+}
+
+type SessionErrorCallback = (sessionId: string, message: string, errorInfo: SessionErrorInfo) => void;
 
 export interface SessionRetryInfo {
   sessionId: string;
@@ -271,6 +276,11 @@ function isUpstreamEmptyResponseText(text: string, isFinal: boolean): boolean {
 /** The V2 adapter marks the idle of an execution that was interrupted rather than finished. */
 function isInterruptedIdle(properties: object): boolean {
   return "interrupted" in properties && properties.interrupted === true;
+}
+
+/** OpenCode V1 reports a stopped run, or a stopped subagent, as this error. */
+function isAbortError(error: unknown): boolean {
+  return isRecord(error) && error.name === "MessageAbortedError";
 }
 
 function extractFirstUpdatedFileFromTitle(title: string): string {
@@ -830,7 +840,11 @@ export class SummaryAggregator {
     }
   }
 
-  private retireSubagent(cardId: string): void {
+  /**
+   * Drops a card. A resumable one leaves its child known, so a later event of that child
+   * opens a new card instead of being ignored.
+   */
+  private retireSubagent(cardId: string, resumable = false): void {
     const state = this.subagentStates.get(cardId);
     if (!state) {
       return;
@@ -843,6 +857,9 @@ export class SummaryAggregator {
 
     if (state.sessionId) {
       this.subagentCardIdBySessionId.delete(state.sessionId);
+    }
+
+    if (state.sessionId && !resumable) {
       this.backgroundChildSessionIds.delete(state.sessionId);
       this.trackedSessionParents.delete(state.sessionId);
       this.removeFromQueue(
@@ -856,17 +873,24 @@ export class SummaryAggregator {
     this.lastSubagentSnapshot = "";
   }
 
-  private isRunningBackgroundSubagent(cardId: string): boolean {
+  /**
+   * A background card whose end is still to come: running, or interrupted by the bot while
+   * its child may still report the real end.
+   */
+  private isFollowedBackgroundSubagent(cardId: string): boolean {
     const state = this.subagentStates.get(cardId);
     return Boolean(
-      state?.background && (state.status === "pending" || state.status === "running"),
+      state?.background &&
+        (state.status === "pending" ||
+          state.status === "running" ||
+          state.status === "interrupted"),
     );
   }
 
   /** A turn boundary: a background subagent still running keeps its card and its events. */
   private retireForegroundSubagents(): void {
     for (const cardId of [...this.subagentOrder]) {
-      if (!this.isRunningBackgroundSubagent(cardId)) {
+      if (!this.isFollowedBackgroundSubagent(cardId)) {
         this.retireSubagent(cardId);
       }
     }
@@ -882,10 +906,60 @@ export class SummaryAggregator {
   /** Stops following background subagents; their cards stay as they were. */
   retireBackgroundSubagents(): void {
     for (const cardId of [...this.subagentOrder]) {
-      if (this.isRunningBackgroundSubagent(cardId)) {
+      if (this.isFollowedBackgroundSubagent(cardId)) {
         this.retireSubagent(cardId);
       }
     }
+  }
+
+  /**
+   * Ends every card still running as interrupted, timed to now. A foreground card is done
+   * with; a background one stays followed, so its child's real end, reported later, still
+   * replaces the mark. After a server restart every card is dropped, its child left
+   * resumable.
+   */
+  interruptSubagents(serverRestarted = false): void {
+    const now = Date.now();
+    let changed = false;
+    for (const cardId of this.subagentOrder) {
+      const state = this.subagentStates.get(cardId);
+      if (!state || (state.status !== "pending" && state.status !== "running")) {
+        continue;
+      }
+
+      state.status = "interrupted";
+      this.clearSubagentActivity(state);
+      state.terminalMessage = undefined;
+      state.finishedAt = now;
+      state.updatedAt = now;
+      changed = true;
+    }
+
+    if (changed) {
+      this.emitSubagentState();
+    }
+
+    for (const cardId of [...this.subagentOrder]) {
+      if (serverRestarted) {
+        this.retireSubagent(cardId, true);
+      } else if (!this.isFollowedBackgroundSubagent(cardId)) {
+        this.retireSubagent(cardId);
+      }
+    }
+  }
+
+  private clearSubagentActivity(state: SubagentState): void {
+    state.currentTool = undefined;
+    state.currentToolInput = undefined;
+    state.currentToolTitle = undefined;
+    state.currentToolCallId = undefined;
+    state.currentToolStartedAt = undefined;
+  }
+
+  /** An interrupted card waits only for its child's real end; other events leave it be. */
+  private isInterruptedSubagentSession(sessionId: string): boolean {
+    const cardId = this.subagentCardIdBySessionId.get(sessionId);
+    return Boolean(cardId && this.subagentStates.get(cardId)?.status === "interrupted");
   }
 
   private markBackgroundSubagent(childSessionId: string): void {
@@ -976,11 +1050,8 @@ export class SummaryAggregator {
     this.lastSubagentSnapshot = snapshot;
 
     const sessionId = this.currentSessionId;
-    this.scheduleOutbound(() => {
-      if (sessionId) {
-        this.onSubagentCallback?.(sessionId, subagents);
-      }
-    }, false);
+    // Returned, so a drain of held work waits for the cards to be drawn.
+    this.scheduleOutbound(() => this.onSubagentCallback?.(sessionId, subagents), false);
   }
 
   private createSubagentState(
@@ -1295,7 +1366,7 @@ export class SummaryAggregator {
       return;
     }
 
-    if (info.id === this.currentSessionId) {
+    if (info.id === this.currentSessionId || this.isInterruptedSubagentSession(info.id)) {
       return;
     }
 
@@ -1322,7 +1393,10 @@ export class SummaryAggregator {
     };
     cost?: number;
   }): void {
-    if (this.finishedSubagentSessionIds.has(info.sessionID)) {
+    if (
+      this.finishedSubagentSessionIds.has(info.sessionID) ||
+      this.isInterruptedSubagentSession(info.sessionID)
+    ) {
       return;
     }
 
@@ -1363,7 +1437,10 @@ export class SummaryAggregator {
     input?: { [key: string]: unknown },
     title?: string,
   ): void {
-    if (this.finishedSubagentSessionIds.has(sessionId)) {
+    if (
+      this.finishedSubagentSessionIds.has(sessionId) ||
+      this.isInterruptedSubagentSession(sessionId)
+    ) {
       return;
     }
 
@@ -1393,7 +1470,10 @@ export class SummaryAggregator {
   }
 
   private updateSubagentStepStart(sessionId: string, snapshot?: string): void {
-    if (this.finishedSubagentSessionIds.has(sessionId)) {
+    if (
+      this.finishedSubagentSessionIds.has(sessionId) ||
+      this.isInterruptedSubagentSession(sessionId)
+    ) {
       return;
     }
 
@@ -1418,7 +1498,10 @@ export class SummaryAggregator {
     cost: number,
     snapshot?: string,
   ): void {
-    if (this.finishedSubagentSessionIds.has(sessionId)) {
+    if (
+      this.finishedSubagentSessionIds.has(sessionId) ||
+      this.isInterruptedSubagentSession(sessionId)
+    ) {
       return;
     }
 
@@ -1442,7 +1525,7 @@ export class SummaryAggregator {
 
   private setSubagentTerminalStatus(
     sessionId: string,
-    status: Extract<SubagentStatus, "completed" | "error">,
+    status: Extract<SubagentStatus, "completed" | "error" | "interrupted">,
     terminalMessage?: string,
   ): void {
     const cardId = this.subagentCardIdBySessionId.get(sessionId);
@@ -1455,12 +1538,14 @@ export class SummaryAggregator {
       return;
     }
 
+    // Already marked interrupted: only a real finish or failure replaces the mark.
+    if (subagent.status === "interrupted" && status === "interrupted") {
+      this.retireSubagent(cardId);
+      return;
+    }
+
     subagent.status = status;
-    subagent.currentTool = undefined;
-    subagent.currentToolInput = undefined;
-    subagent.currentToolTitle = undefined;
-    subagent.currentToolCallId = undefined;
-    subagent.currentToolStartedAt = undefined;
+    this.clearSubagentActivity(subagent);
     subagent.terminalMessage = terminalMessage?.trim() || undefined;
     // Frozen on purpose: the card is re-rendered on a heartbeat, so a duration
     // derived from the current time would keep growing after the run ended.
@@ -2452,10 +2537,13 @@ export class SummaryAggregator {
     },
   ): void {
     const { sessionID } = event.properties;
+    const interrupted = isInterruptedIdle(event.properties);
 
     if (this.isTrackedChildSession(sessionID)) {
-      logger.info(`[Aggregator] Subagent session became idle: ${sessionID}`);
-      this.setSubagentTerminalStatus(sessionID, "completed");
+      logger.info(
+        `[Aggregator] Subagent session became idle: ${sessionID}, interrupted=${interrupted}`,
+      );
+      this.setSubagentTerminalStatus(sessionID, interrupted ? "interrupted" : "completed");
       this.emitSessionRunEnded(sessionID);
       return;
     }
@@ -2469,6 +2557,9 @@ export class SummaryAggregator {
     this.liveTurnStartedAt = null;
     this.turnEndCount++;
     this.acceptsSubagentEvents = false;
+    if (interrupted) {
+      this.interruptSubagents();
+    }
     this.retireForegroundSubagents();
 
     // Stop typing indicator when session goes idle
@@ -2476,7 +2567,7 @@ export class SummaryAggregator {
 
     if (this.onSessionIdleCallback) {
       const callback = this.onSessionIdleCallback;
-      const idleInfo: SessionIdleInfo = { interrupted: isInterruptedIdle(event.properties) };
+      const idleInfo: SessionIdleInfo = { interrupted };
       // Returned, so a drain of held work waits for the run to be closed in the chat.
       this.scheduleOutbound(() => callback(sessionID, idleInfo), true);
     }
@@ -2520,9 +2611,15 @@ export class SummaryAggregator {
       logger.warn(`[Aggregator] session.error with unexpected error shape`, error);
     }
 
+    const interrupted = isAbortError(error);
+
     if (sessionID && this.isTrackedChildSession(sessionID)) {
       logger.warn(`[Aggregator] Subagent session error: ${sessionID}: ${message}`);
-      this.setSubagentTerminalStatus(sessionID, "error", message);
+      if (interrupted) {
+        this.setSubagentTerminalStatus(sessionID, "interrupted");
+      } else {
+        this.setSubagentTerminalStatus(sessionID, "error", message);
+      }
       this.emitSessionRunEnded(sessionID);
       return;
     }
@@ -2536,13 +2633,16 @@ export class SummaryAggregator {
     this.liveTurnStartedAt = null;
     this.turnEndCount++;
     this.acceptsSubagentEvents = false;
+    if (interrupted) {
+      this.interruptSubagents();
+    }
     this.retireForegroundSubagents();
     this.stopTypingIndicator();
 
     if (this.onSessionErrorCallback) {
       const callback = this.onSessionErrorCallback;
       this.scheduleOutbound(() => {
-        callback(sessionID, message);
+        callback(sessionID, message, { interrupted });
       }, true);
     }
   }

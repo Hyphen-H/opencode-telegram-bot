@@ -6,6 +6,7 @@ import { clearPromptResponseMode } from "../../handlers/prompt.js";
 import { dispatchNextQueuedPrompt } from "../../handlers/prompt-queue-dispatch.js";
 import { wakePromptHandover } from "../../handlers/prompt-handover.js";
 import { resetStreamThrottle } from "../../streaming/stream-throttle.js";
+import { buildFailedToolEvent } from "../failed-tool-event.js";
 import {
   formatSessionMessage,
   isCompactProgressMode,
@@ -23,6 +24,22 @@ type SessionLifecycleDeps = EventHandlerDeps<
   | "scheduledTaskRuntime"
   | "summaryAggregator"
 >;
+
+/**
+ * OpenCode V1 stops a run without ending its running calls: each foreground one ends here
+ * as OpenCode V2 ends it, failed, so its line drops the running mark. Background calls stay.
+ */
+function endRunningForegroundCalls(
+  { runtime, summaryAggregator }: SessionLifecycleDeps,
+  sessionId: string,
+): void {
+  const now = Date.now();
+  for (const tool of runtime.getRunningToolInfos(sessionId)) {
+    if (!runtime.runningToolTracker.isBackground(tool.callId)) {
+      summaryAggregator.processEvent(buildFailedToolEvent(tool, now));
+    }
+  }
+}
 
 /** Session idle, error and retry. */
 export function registerSessionLifecycleHandlers(deps: SessionLifecycleDeps): void {
@@ -87,7 +104,10 @@ export function registerSessionLifecycleHandlers(deps: SessionLifecycleDeps): vo
     }
   });
 
-  summaryAggregator.setOnSessionError(async (sessionId, message) => {
+  summaryAggregator.setOnSessionError(async (sessionId, message, { interrupted }) => {
+    if (interrupted) {
+      endRunningForegroundCalls(deps, sessionId);
+    }
     wakePromptHandover(sessionId);
     await markAttachedSessionIdle(sessionId, deps);
     const destination = policy.getDestination(sessionId);
