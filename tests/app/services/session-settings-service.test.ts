@@ -1,8 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Session } from "@opencode-ai/sdk/v2";
+import type { ModelInfo } from "../../../src/app/types/model.js";
 
 const selectAgent = vi.hoisted(() => vi.fn());
-const selectModel = vi.hoisted(() => vi.fn());
+const storedModel = vi.hoisted(() => ({
+  current: { providerID: "opencode", modelID: "big-pickle", variant: "default" } as ModelInfo,
+}));
+const selectModel = vi.hoisted(() =>
+  vi.fn((model: ModelInfo) => {
+    storedModel.current = model;
+  }),
+);
 const resolveModelToAdopt = vi.hoisted(() => vi.fn());
 
 vi.mock("../../../src/app/services/agent-selection-service.js", () => ({
@@ -10,6 +18,7 @@ vi.mock("../../../src/app/services/agent-selection-service.js", () => ({
 }));
 
 vi.mock("../../../src/app/services/model-selection-service.js", () => ({
+  getStoredModel: () => storedModel.current,
   resolveModelToAdopt,
   selectModel,
 }));
@@ -33,6 +42,7 @@ describe("app/services/session-settings-service", () => {
   beforeEach(() => {
     selectAgent.mockClear();
     selectModel.mockClear();
+    storedModel.current = { providerID: "opencode", modelID: "big-pickle", variant: "default" };
     resolveModelToAdopt.mockReset();
     resolveModelToAdopt.mockImplementation(async (model: unknown) => model);
   });
@@ -130,5 +140,28 @@ describe("app/services/session-settings-service", () => {
 
     expect(selectAgent).toHaveBeenCalledWith("plan");
     expect(selectModel).not.toHaveBeenCalled();
+  });
+
+  it("reports a change when the session carries another model or variant", async () => {
+    await expect(
+      applySessionSettings(
+        makeSession({ model: { providerID: "opencode-go", id: "glm-5.3-flash" } }),
+      ),
+    ).resolves.toBe(true);
+
+    await expect(
+      applySessionSettings(
+        makeSession({ model: { providerID: "opencode-go", id: "glm-5.3-flash", variant: "high" } }),
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it("reports no change for the model already selected or a session with none", async () => {
+    await expect(
+      applySessionSettings(makeSession({ model: { providerID: "opencode", id: "big-pickle" } })),
+    ).resolves.toBe(false);
+
+    await expect(applySessionSettings(makeSession({ agent: "plan" }))).resolves.toBe(false);
+    await expect(applySessionSettings(makeSession())).resolves.toBe(false);
   });
 });

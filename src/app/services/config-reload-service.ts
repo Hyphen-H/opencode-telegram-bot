@@ -1,6 +1,6 @@
 import { opencodeV2Client } from "../../opencode/client.js";
 import { refreshModelCatalogAfterConfigReload } from "../../opencode/ready-refresh.js";
-import type { ModelInfo } from "../types/model.js";
+import { isSameModel } from "../types/model.js";
 import { logger } from "../../utils/logger.js";
 import { extractErrorMessage } from "../../utils/opencode-error.js";
 import { getStoredModel } from "./model-selection-service.js";
@@ -14,14 +14,6 @@ export type ConfigReloadResult =
   | { kind: "timeout" };
 
 let reloadInFlight: Promise<ConfigReloadResult> | null = null;
-
-function isSameModel(left: ModelInfo, right: ModelInfo): boolean {
-  return (
-    left.providerID === right.providerID &&
-    left.modelID === right.modelID &&
-    left.variant === right.variant
-  );
-}
 
 async function reloadAndRefreshModelCatalog(): Promise<ConfigReloadResult> {
   const { error } = await opencodeV2Client.location.reload();

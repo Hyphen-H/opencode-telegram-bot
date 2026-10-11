@@ -438,7 +438,7 @@ async function applyModelSelectionAndNotify(
 
   selectModel(modelInfo);
   deps.keyboardManager.updateModel(modelInfo);
-  await deps.pinnedMessageManager.refreshContextLimit();
+  await deps.pinnedMessageManager.onModelChange();
 
   const currentAgent = await resolveProjectAgent(getStoredAgent());
   const contextInfo =

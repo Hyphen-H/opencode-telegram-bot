@@ -16,6 +16,7 @@ const mocked = vi.hoisted(() => ({
   pinnedGetContextInfoMock: vi.fn(),
   pinnedGetContextLimitMock: vi.fn(),
   pinnedRefreshMock: vi.fn(),
+  pinnedOnModelChangeMock: vi.fn(),
   createMainKeyboardMock: vi.fn(),
   switchedMock: vi.fn(),
   showVariantMenuAfterModelChangeMock: vi.fn(),
@@ -55,6 +56,7 @@ import { handleAgentSelect } from "../../../src/bot/callbacks/agent-selection-ca
 import { t } from "../../../src/i18n/index.js";
 import { getAgentDisplayName } from "../../../src/app/types/agent.js";
 import { createTestAppContainer } from "../../helpers/app-container.js";
+import { defined } from "../../helpers/defined.js";
 
 function createDeps() {
   return createTestAppContainer({
@@ -70,6 +72,7 @@ function createDeps() {
       getContextInfo: mocked.pinnedGetContextInfoMock,
       getContextLimit: mocked.pinnedGetContextLimitMock,
       refresh: mocked.pinnedRefreshMock,
+      onModelChange: mocked.pinnedOnModelChangeMock,
     } as never,
   });
 }
@@ -104,6 +107,7 @@ describe("bot agent selection", () => {
     mocked.pinnedGetContextInfoMock.mockReset();
     mocked.pinnedGetContextLimitMock.mockReset();
     mocked.pinnedRefreshMock.mockReset();
+    mocked.pinnedOnModelChangeMock.mockReset();
     mocked.createMainKeyboardMock.mockReset();
     mocked.switchedMock.mockReset();
     mocked.showVariantMenuAfterModelChangeMock.mockReset();
@@ -121,6 +125,7 @@ describe("bot agent selection", () => {
     mocked.createMainKeyboardMock.mockReturnValue({});
     mocked.switchedMock.mockResolvedValue(undefined);
     mocked.pinnedRefreshMock.mockResolvedValue(undefined);
+    mocked.pinnedOnModelChangeMock.mockResolvedValue(undefined);
     mocked.pinnedRefreshContextLimitMock.mockResolvedValue(undefined);
   });
 
@@ -161,8 +166,29 @@ describe("bot agent selection", () => {
       t("agent.changed_message", { name: getAgentDisplayName("plan") }),
       keyboard,
     );
-    expect(mocked.pinnedRefreshMock).toHaveBeenCalledOnce();
+    expect(mocked.pinnedOnModelChangeMock).toHaveBeenCalledOnce();
     expect(mocked.showVariantMenuAfterModelChangeMock).not.toHaveBeenCalled();
+  });
+
+  it("draws the keyboard with the limit of the model the agent applied", async () => {
+    mocked.applyAgentConfiguredSettingsMock.mockResolvedValueOnce(true);
+    mocked.pinnedGetContextInfoMock.mockReturnValue({ tokensUsed: 10, tokensLimit: 200_000 });
+    mocked.pinnedOnModelChangeMock.mockImplementation(async () => {
+      mocked.pinnedGetContextInfoMock.mockReturnValue({ tokensUsed: 10, tokensLimit: 1_000_000 });
+    });
+
+    await handleAgentSelect(mockContext({ callbackQuery: { data: "agent:plan" } }), createDeps());
+
+    expect(mocked.keyboardUpdateContextMock).toHaveBeenCalledWith(10, 1_000_000);
+    expect(mocked.createMainKeyboardMock).toHaveBeenCalledWith(
+      "plan",
+      expect.anything(),
+      { tokensUsed: 10, tokensLimit: 1_000_000 },
+      expect.anything(),
+    );
+    expect(defined(mocked.pinnedOnModelChangeMock.mock.invocationCallOrder[0])).toBeLessThan(
+      defined(mocked.switchedMock.mock.invocationCallOrder[0]),
+    );
   });
 
   it("refreshes the pinned dashboard when only a variant was applied", async () => {
@@ -174,7 +200,7 @@ describe("bot agent selection", () => {
 
     await handleAgentSelect(ctx, createDeps());
 
-    expect(mocked.pinnedRefreshMock).toHaveBeenCalledOnce();
+    expect(mocked.pinnedOnModelChangeMock).toHaveBeenCalledOnce();
     expect(mocked.showVariantMenuAfterModelChangeMock).not.toHaveBeenCalled();
   });
 
@@ -185,6 +211,7 @@ describe("bot agent selection", () => {
 
     await handleAgentSelect(ctx, createDeps());
 
+    expect(mocked.pinnedOnModelChangeMock).not.toHaveBeenCalled();
     expect(mocked.pinnedRefreshMock).not.toHaveBeenCalled();
     expect(mocked.showVariantMenuAfterModelChangeMock).not.toHaveBeenCalled();
   });

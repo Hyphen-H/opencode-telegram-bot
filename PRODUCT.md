@@ -98,6 +98,7 @@ No public inbound ports are required for normal usage.
 - Keep a pinned status message in the chat; it can be turned off in `/settings` (default on)
 - Show session title, project, model, context usage, and changed files; when a variant is set, the model line is `provider/id (variant)`
 - On a session switch, a bot restart or `/rename`, the dashboard appears with the session's real context, cost and changed files, never a placeholder zero; turning it on in `/settings` sends it at once and corrects it once the values load
+- Picking a model, selecting an agent that applies its own model, or re-selecting the session on the dashboard when it brings another model edits the dashboard at once, mid-run too, to that model and its context limit; a limit the catalog does not list yet shows the default and is corrected once it does
 - Auto-update status from SSE and tool events
 - Preserve pinned message ID across bot restarts
 

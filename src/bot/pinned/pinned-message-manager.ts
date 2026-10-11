@@ -568,6 +568,16 @@ export class PinnedMessageManager {
   }
 
   /**
+   * The stored model changed: re-read its context limit, fill in its own limit once the catalog
+   * lists it, and redraw the existing dashboard in place.
+   */
+  async onModelChange(): Promise<void> {
+    await this.fetchContextLimit();
+    this.fillContextLimitWhenListed();
+    await this.refresh();
+  }
+
+  /**
    * Called when session.diff SSE event is received.
    * Only overwrites if non-empty (API may return empty while tool events collected data).
    */

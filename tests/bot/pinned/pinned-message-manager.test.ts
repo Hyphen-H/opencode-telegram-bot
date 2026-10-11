@@ -850,6 +850,79 @@ describe("pinned/manager", () => {
       expect(pinnedMessageManager.getContextLimit()).toBe(204800);
     });
 
+    describe("after a model change", () => {
+      it("edits the existing dashboard with the new model's limit", async () => {
+        await pinnedMessageManager.onSessionChange("ses-1", "Test Session");
+        fakeApi.editMessageText.mockClear();
+        mocked.getModelContextLimit.mockResolvedValue(1_000_000);
+
+        await pinnedMessageManager.onModelChange();
+
+        expect(fakeApi.editMessageText).toHaveBeenCalledWith(
+          123,
+          999,
+          expect.stringContaining("0/1000000"),
+        );
+        expect(fakeApi.sendMessage).toHaveBeenCalledTimes(1);
+        expect(pinnedMessageManager.getContextInfo()).toEqual({
+          tokensUsed: 0,
+          tokensLimit: 1_000_000,
+        });
+      });
+
+      it("fills in the model's own limit once the catalog lists it", async () => {
+        await pinnedMessageManager.onSessionChange("ses-1", "Test Session");
+        mocked.getStoredModel.mockReturnValue({ providerID: "openai", modelID: "gpt-6" });
+        mocked.waitForModelContextLimit.mockResolvedValue(1_000_000);
+
+        await pinnedMessageManager.onModelChange();
+
+        expect(mocked.waitForModelContextLimit).toHaveBeenLastCalledWith("openai", "gpt-6");
+        await vi.waitFor(() =>
+          expect(fakeApi.editMessageText).toHaveBeenLastCalledWith(
+            123,
+            999,
+            expect.stringContaining("0/1000000"),
+          ),
+        );
+      });
+
+      it("sends nothing without a session", async () => {
+        mocked.getModelContextLimit.mockResolvedValue(1_000_000);
+
+        await pinnedMessageManager.onModelChange();
+
+        expect(fakeApi.sendMessage).not.toHaveBeenCalled();
+        expect(fakeApi.editMessageText).not.toHaveBeenCalled();
+        expect(pinnedMessageManager.getContextLimit()).toBe(1_000_000);
+      });
+
+      it("sends nothing for a held session without a dashboard message", async () => {
+        mocked.getPinnedDashboardEnabled.mockReturnValue(false);
+        await pinnedMessageManager.onSessionChange("ses-1", "Test Session");
+        mocked.getPinnedDashboardEnabled.mockReturnValue(true);
+
+        await pinnedMessageManager.onModelChange();
+
+        expect(fakeApi.sendMessage).not.toHaveBeenCalled();
+        expect(fakeApi.editMessageText).not.toHaveBeenCalled();
+      });
+
+      it("only updates the keyboard when the dashboard is off", async () => {
+        await pinnedMessageManager.onSessionChange("ses-1", "Test Session");
+        fakeApi.editMessageText.mockClear();
+        mocked.getPinnedDashboardEnabled.mockReturnValue(false);
+        mocked.getModelContextLimit.mockResolvedValue(1_000_000);
+        const keyboardUpdate = vi.fn();
+        pinnedMessageManager.setOnKeyboardUpdate(keyboardUpdate);
+
+        await pinnedMessageManager.onModelChange();
+
+        expect(fakeApi.editMessageText).not.toHaveBeenCalled();
+        expect(keyboardUpdate).toHaveBeenLastCalledWith(0, 1_000_000);
+      });
+    });
+
     it("falls back to the default limit when the model lookup fails", async () => {
       mocked.getModelContextLimit.mockRejectedValue(new Error("model registry unavailable"));
 

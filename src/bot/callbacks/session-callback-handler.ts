@@ -43,6 +43,7 @@ export type SessionSelectDeps = Pick<
   | "interactionManager"
   | "keyboardManager"
   | "permissionManager"
+  | "pinnedMessageManager"
   | "questionManager"
   | "resetInteractions"
   | "summaryAggregator"
@@ -113,9 +114,13 @@ export async function selectSessionById(
     directory: currentProject.worktree,
   };
   setCurrentSession(sessionInfo);
+  // The attach does not redraw the dashboard already showing this session.
+  const pinnedState = deps.pinnedMessageManager.getState();
+  const isSessionOnDashboard =
+    pinnedState.sessionId === session.id && Boolean(pinnedState.messageId);
   // Pull before attaching: the pinned message is rendered inside attachToSession
   // and reads the stored model, so its Model line comes out already pulled.
-  await applySessionSettings(session);
+  const modelChanged = await applySessionSettings(session);
   deps.resetInteractions("session_switched");
 
   await ctx.answerCallbackQuery();
@@ -156,6 +161,10 @@ export async function selectSessionById(
       }
       logger.error("[Sessions] Error following selected session:", err);
       throw err;
+    }
+
+    if (isSessionOnDashboard && modelChanged) {
+      await deps.pinnedMessageManager.onModelChange();
     }
 
     if (ctx.chat) {

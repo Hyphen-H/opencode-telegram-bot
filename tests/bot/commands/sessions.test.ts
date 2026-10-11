@@ -32,6 +32,8 @@ const mocked = vi.hoisted(() => ({
   keyboardUpdateModelMock: vi.fn(),
   keyboardUpdateContextMock: vi.fn(),
   applySessionSettingsMock: vi.fn(),
+  pinnedGetStateMock: vi.fn(),
+  pinnedOnModelChangeMock: vi.fn(),
   getStoredModelMock: vi.fn(() => ({
     providerID: "opencode-go",
     modelID: "deepseek-v4-flash",
@@ -188,6 +190,10 @@ function createDeps() {
       updateModel: mocked.keyboardUpdateModelMock,
       updateContext: mocked.keyboardUpdateContextMock,
     } as never,
+    pinnedMessageManager: {
+      getState: mocked.pinnedGetStateMock,
+      onModelChange: mocked.pinnedOnModelChangeMock,
+    } as never,
     bot: { api: {} } as Bot<Context>,
   };
 }
@@ -233,6 +239,11 @@ describe("bot/commands/sessions", () => {
     mocked.keyboardUpdateModelMock.mockReset();
     mocked.keyboardUpdateContextMock.mockReset();
     mocked.applySessionSettingsMock.mockReset();
+    mocked.applySessionSettingsMock.mockResolvedValue(false);
+    mocked.pinnedGetStateMock.mockReset();
+    mocked.pinnedGetStateMock.mockReturnValue({ sessionId: null, messageId: null });
+    mocked.pinnedOnModelChangeMock.mockReset();
+    mocked.pinnedOnModelChangeMock.mockResolvedValue(undefined);
     mocked.resolveProjectAgentMock.mockReset();
     mocked.resolveProjectAgentMock.mockResolvedValue("build");
     mocked.attachToSessionMock.mockReset();
@@ -704,6 +715,48 @@ describe("bot/commands/sessions", () => {
     expect(defined(mocked.keyboardUpdateModelMock.mock.invocationCallOrder[0])).toBeLessThan(
       defined(mocked.keyboardGetKeyboardMock.mock.invocationCallOrder[0]),
     );
+  });
+
+  describe("redrawing the dashboard after the pull", () => {
+    async function selectSessionOne(): Promise<void> {
+      mocked.sessionGetMock.mockResolvedValueOnce({ data: createSession(0), error: null });
+      startInteractionForTest(container.interactionManager, {
+        kind: "inline",
+        expectedInput: "callback",
+        metadata: { menuKind: "session", messageId: 456 },
+      });
+
+      await handleSessionSelect(createCallbackContext("session:session-1", 456), createDeps());
+    }
+
+    it("redraws the dashboard of the re-selected session when the pull changed the model", async () => {
+      mocked.pinnedGetStateMock.mockReturnValue({ sessionId: "session-1", messageId: 999 });
+      mocked.applySessionSettingsMock.mockResolvedValue(true);
+
+      await selectSessionOne();
+
+      expect(mocked.pinnedOnModelChangeMock).toHaveBeenCalledOnce();
+      expect(defined(mocked.attachToSessionMock.mock.invocationCallOrder[0])).toBeLessThan(
+        defined(mocked.pinnedOnModelChangeMock.mock.invocationCallOrder[0]),
+      );
+    });
+
+    it("leaves the dashboard of the re-selected session alone when the model did not change", async () => {
+      mocked.pinnedGetStateMock.mockReturnValue({ sessionId: "session-1", messageId: 999 });
+
+      await selectSessionOne();
+
+      expect(mocked.pinnedOnModelChangeMock).not.toHaveBeenCalled();
+    });
+
+    it("leaves a switch to another session to the attach", async () => {
+      mocked.pinnedGetStateMock.mockReturnValue({ sessionId: "session-other", messageId: 999 });
+      mocked.applySessionSettingsMock.mockResolvedValue(true);
+
+      await selectSessionOne();
+
+      expect(mocked.pinnedOnModelChangeMock).not.toHaveBeenCalled();
+    });
   });
 
   it("pulls the settings when a background session notification is opened", async () => {

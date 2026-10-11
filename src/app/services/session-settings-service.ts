@@ -3,8 +3,8 @@
  */
 import type { Session } from "@opencode-ai/sdk/v2";
 import { selectAgent } from "./agent-selection-service.js";
-import { resolveModelToAdopt, selectModel } from "./model-selection-service.js";
-import type { ModelInfo } from "../types/model.js";
+import { getStoredModel, resolveModelToAdopt, selectModel } from "./model-selection-service.js";
+import { isSameModel, type ModelInfo } from "../types/model.js";
 import { logger } from "../../utils/logger.js";
 
 /**
@@ -15,9 +15,11 @@ import { logger } from "../../utils/logger.js";
  * own, so a model without a variant is stored at "default". A model OpenCode no
  * longer offers is replaced by the config model, or not adopted at all.
  * @param session Session to read the settings from
+ * @returns Whether the stored model (provider, id or variant) changed
  */
-export async function applySessionSettings(session: Session): Promise<void> {
+export async function applySessionSettings(session: Session): Promise<boolean> {
   const model = session.model;
+  const modelBefore = { ...getStoredModel() };
 
   if (session.agent) {
     selectAgent(session.agent);
@@ -44,7 +46,7 @@ export async function applySessionSettings(session: Session): Promise<void> {
 
   if (!session.agent && !model) {
     logger.debug(`[SessionSettings] Session ${session.id} carries no agent or model to pull`);
-    return;
+    return false;
   }
 
   logger.info(
@@ -54,4 +56,6 @@ export async function applySessionSettings(session: Session): Promise<void> {
         : "unchanged"
     }`,
   );
+
+  return !isSameModel(modelBefore, getStoredModel());
 }

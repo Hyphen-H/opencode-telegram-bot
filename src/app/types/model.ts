@@ -29,6 +29,15 @@ export interface ModelSelectionLists {
   recent: FavoriteModel[];
 }
 
+/** Same provider, model and variant. */
+export function isSameModel(left: ModelInfo, right: ModelInfo): boolean {
+  return (
+    left.providerID === right.providerID &&
+    left.modelID === right.modelID &&
+    left.variant === right.variant
+  );
+}
+
 /**
  * Format model for button display (compact format)
  * @param providerID Provider ID

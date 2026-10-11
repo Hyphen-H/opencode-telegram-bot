@@ -50,6 +50,9 @@ export async function handleAgentSelect(ctx: Context, deps: AgentSelectDeps): Pr
 
     selectAgent(agentName);
     const settingsApplied = await applyAgentConfiguredSettings(agentName);
+    if (settingsApplied) {
+      await deps.pinnedMessageManager.onModelChange();
+    }
 
     deps.keyboardManager.updateAgent(agentName);
 
@@ -79,10 +82,6 @@ export async function handleAgentSelect(ctx: Context, deps: AgentSelectDeps): Pr
     clearActiveInlineMenu("agent_selected", deps);
 
     await switched(ctx, t("agent.changed_message", { name: displayName }), keyboard);
-
-    if (settingsApplied) {
-      await deps.pinnedMessageManager.refresh();
-    }
 
     return true;
   } catch (err) {

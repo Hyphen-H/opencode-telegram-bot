@@ -20,7 +20,7 @@ const mocked = vi.hoisted(() => ({
   keyboardUpdateModelMock: vi.fn(),
   keyboardUpdateAgentMock: vi.fn(),
   keyboardUpdateContextMock: vi.fn(),
-  pinnedRefreshContextLimitMock: vi.fn(),
+  pinnedOnModelChangeMock: vi.fn(),
   pinnedGetContextInfoMock: vi.fn(),
   pinnedGetContextLimitMock: vi.fn(),
   createMainKeyboardMock: vi.fn(),
@@ -91,7 +91,7 @@ function createDeps() {
       updateContext: mocked.keyboardUpdateContextMock,
     } as never,
     pinnedMessageManager: {
-      refreshContextLimit: mocked.pinnedRefreshContextLimitMock,
+      onModelChange: mocked.pinnedOnModelChangeMock,
       getContextInfo: mocked.pinnedGetContextInfoMock,
       getContextLimit: mocked.pinnedGetContextLimitMock,
     } as never,
@@ -122,6 +122,13 @@ function cell(
   return defined(keyboard[row]?.[col], `button[${row}][${col}]`);
 }
 
+function expectDashboardRedrawnBeforeVariantMenu(): void {
+  expect(mocked.pinnedOnModelChangeMock).toHaveBeenCalledOnce();
+  expect(defined(mocked.pinnedOnModelChangeMock.mock.invocationCallOrder[0])).toBeLessThan(
+    defined(mocked.showVariantMenuAfterModelChangeMock.mock.invocationCallOrder[0]),
+  );
+}
+
 describe("bot model selection", () => {
   beforeEach(() => {
     mocked.getModelSelectionListsMock.mockReset();
@@ -144,7 +151,7 @@ describe("bot model selection", () => {
     mocked.keyboardUpdateModelMock.mockReset();
     mocked.keyboardUpdateAgentMock.mockReset();
     mocked.keyboardUpdateContextMock.mockReset();
-    mocked.pinnedRefreshContextLimitMock.mockReset().mockResolvedValue(undefined);
+    mocked.pinnedOnModelChangeMock.mockReset().mockResolvedValue(undefined);
     mocked.pinnedGetContextInfoMock.mockReset().mockReturnValue(null);
     mocked.pinnedGetContextLimitMock.mockReset().mockReturnValue(0);
     mocked.createMainKeyboardMock.mockReset().mockReturnValue({ keyboard: [["main"]] });
@@ -272,6 +279,7 @@ describe("bot model selection", () => {
         "variant menu order",
       );
       expect(replyOrder).toBeLessThan(variantMenuOrder);
+      expectDashboardRedrawnBeforeVariantMenu();
     });
 
     it("redraws the menu without selecting a favorite OpenCode no longer offers", async () => {
@@ -641,6 +649,7 @@ describe("bot model selection", () => {
         modelID: longModelID,
         variant: "default",
       }, expect.anything());
+      expectDashboardRedrawnBeforeVariantMenu();
     });
 
     it("re-runs the search without selecting a result OpenCode no longer offers", async () => {
@@ -933,6 +942,7 @@ describe("bot model selection", () => {
         modelID: "gpt-5",
         variant: "default",
       }, expect.anything());
+      expectDashboardRedrawnBeforeVariantMenu();
     });
 
     it("redraws the provider page without selecting a model OpenCode no longer offers", async () => {
