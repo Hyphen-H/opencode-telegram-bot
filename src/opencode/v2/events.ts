@@ -600,9 +600,6 @@ export function createV2EventTranslator(options: V2EventTranslatorOptions = {}) 
         // stays a running tool here until the operation itself ends.
         const key = metadata.status === "running" ? backgroundKey(metadata) : null;
         if (key) {
-          if (typeof metadata.sessionID === "string" && metadata.sessionId === undefined) {
-            metadata.sessionId = metadata.sessionID;
-          }
           backgroundCalls.set(key, { ...call, metadata, callID: data.id, output });
           const part = toolPart(
             data.id,

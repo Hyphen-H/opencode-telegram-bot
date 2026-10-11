@@ -432,6 +432,174 @@ describe("summary/aggregator", () => {
     });
   });
 
+  describe("task call input reaches its own card", () => {
+    function createChild(id: string): void {
+      summaryAggregator.processEvent({
+        type: "session.created",
+        properties: {
+          info: {
+            id,
+            parentID: "root-session",
+            title: "",
+            slug: id,
+            directory: "D:/repo",
+            projectID: "p1",
+            version: "1",
+            time: { created: Date.now(), updated: Date.now() },
+          },
+        },
+      } as unknown as Event);
+    }
+
+    function emitTaskCall(
+      callID: string,
+      description: string,
+      fields: { status?: string; sessionId?: string } = {},
+    ): void {
+      summaryAggregator.processEvent({
+        type: "message.part.updated",
+        properties: {
+          part: {
+            id: `part-${callID}`,
+            sessionID: "root-session",
+            messageID: "root-message",
+            type: "tool",
+            callID,
+            tool: "task",
+            state: {
+              status: fields.status ?? "running",
+              input: { description, subagent_type: "explore", prompt: description },
+              metadata: fields.sessionId ? { sessionId: fields.sessionId } : {},
+              time: { start: Date.now() },
+            },
+          },
+        },
+      } as unknown as Event);
+    }
+
+    function endChild(id: string): void {
+      summaryAggregator.processEvent({
+        type: "session.idle",
+        properties: { sessionID: id },
+      } as unknown as Event);
+    }
+
+    function descriptions(onSubagent: ReturnType<typeof vi.fn>): Record<string, string> {
+      const cards = (onSubagent.mock.lastCall?.[1] ?? []) as Array<{
+        sessionId: string;
+        description: string;
+      }>;
+      return Object.fromEntries(cards.map((card) => [card.sessionId, card.description]));
+    }
+
+    it("gives a call's input to the card of the child session it names", () => {
+      const onSubagent = vi.fn();
+      summaryAggregator.setOnSubagent(onSubagent);
+      summaryAggregator.setSession("root-session");
+      emitTaskCall("call-1", "first task");
+      emitTaskCall("call-2", "second task");
+      createChild("child-1");
+      createChild("child-2");
+
+      emitTaskCall("call-2", "second task", { sessionId: "child-2" });
+
+      expect(descriptions(onSubagent)).toEqual({ "child-1": "", "child-2": "second task" });
+    });
+
+    it("applies nothing while two open calls name no child", () => {
+      const onSubagent = vi.fn();
+      summaryAggregator.setOnSubagent(onSubagent);
+      summaryAggregator.setSession("root-session");
+      emitTaskCall("call-1", "first task");
+      emitTaskCall("call-2", "second task");
+      createChild("child-1");
+
+      emitTaskCall("call-2", "second task");
+      emitTaskCall("call-1", "first task");
+
+      expect(descriptions(onSubagent)).toEqual({ "child-1": "" });
+    });
+
+    it("pairs the only open call with the only waiting card", () => {
+      const onSubagent = vi.fn();
+      summaryAggregator.setOnSubagent(onSubagent);
+      summaryAggregator.setSession("root-session");
+      emitTaskCall("call-1", "first task");
+      createChild("child-1");
+
+      emitTaskCall("call-1", "first task");
+
+      expect(onSubagent.mock.lastCall?.[1]).toEqual([
+        expect.objectContaining({
+          sessionId: "child-1",
+          description: "first task",
+          agent: "explore",
+        }),
+      ]);
+    });
+
+    it("never pairs a card that ended without its input", () => {
+      const onSubagent = vi.fn();
+      summaryAggregator.setOnSubagent(onSubagent);
+      summaryAggregator.setSession("root-session");
+      emitTaskCall("call-1", "first task");
+      emitTaskCall("call-2", "second task");
+      createChild("child-2");
+      emitTaskCall("call-2", "second task", { status: "completed" });
+      endChild("child-2");
+      const ended = onSubagent.mock.lastCall?.[1][0];
+
+      emitTaskCall("call-1", "first task");
+      createChild("child-1");
+
+      expect(ended).toMatchObject({ sessionId: "child-2", description: "", status: "completed" });
+      expect(descriptions(onSubagent)).toEqual({ "child-1": "" });
+    });
+
+    it("forgets a call that never ended once the parent's turn ends", () => {
+      const onSubagent = vi.fn();
+      summaryAggregator.setOnSubagent(onSubagent);
+      summaryAggregator.setSession("root-session");
+      emitTaskCall("call-stale", "lost task");
+      endChild("root-session");
+      summaryAggregator.processEvent({
+        type: "message.updated",
+        properties: {
+          info: {
+            id: "root-user-2",
+            sessionID: "root-session",
+            role: "user",
+            time: { created: Date.now() },
+          },
+        },
+      } as unknown as Event);
+
+      emitTaskCall("call-1", "first task");
+      createChild("child-1");
+      emitTaskCall("call-1", "first task");
+
+      expect(descriptions(onSubagent)).toEqual({ "child-1": "first task" });
+    });
+
+    it("keeps updating only the card a call was paired with", () => {
+      const onSubagent = vi.fn();
+      summaryAggregator.setOnSubagent(onSubagent);
+      summaryAggregator.setSession("root-session");
+      emitTaskCall("call-1", "first task");
+      createChild("child-1");
+      emitTaskCall("call-1", "first task");
+      emitTaskCall("call-2", "second task");
+      createChild("child-2");
+
+      emitTaskCall("call-1", "first task, refined");
+
+      expect(descriptions(onSubagent)).toEqual({
+        "child-1": "first task, refined",
+        "child-2": "",
+      });
+    });
+  });
+
   describe("subagent current tool timing", () => {
     function startSubagent(): void {
       summaryAggregator.setSession("root-session");

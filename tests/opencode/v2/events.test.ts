@@ -538,6 +538,37 @@ describe("opencode/v2/events", () => {
       });
     });
 
+    it("names the child session of a foreground subagent while it runs and when it ends", () => {
+      const translate = createV2EventTranslator();
+
+      const states = toolStates(
+        payloads(translate, [
+          event("session.tool.input.started", { ...base, name: "subagent" }),
+          event("session.tool.called", {
+            ...base,
+            input: { description: "Scan", agent: "general" },
+            executed: false,
+          }),
+          event("session.tool.progress", { ...base, metadata: { sessionID: "child-1" } }),
+          event("session.tool.success", {
+            ...base,
+            content: [{ type: "text", text: "Done" }],
+            metadata: { sessionID: "child-1" },
+            executed: true,
+          }),
+        ]),
+      );
+
+      expect(states[2]).toMatchObject({
+        status: "running",
+        metadata: { sessionID: "child-1", sessionId: "child-1" },
+      });
+      expect(states[3]).toMatchObject({
+        status: "completed",
+        metadata: { sessionID: "child-1", sessionId: "child-1" },
+      });
+    });
+
     it("completes the parent's task after the child session ends", () => {
       const translate = createV2EventTranslator();
       launchSubagent(translate);

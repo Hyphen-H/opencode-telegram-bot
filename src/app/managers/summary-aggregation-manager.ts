@@ -374,6 +374,9 @@ export class SummaryAggregator {
   private pendingSubagentCardIdsByParent: Map<string, string[]> = new Map();
   private pendingChildSessionIdsByParent: Map<string, string[]> = new Map();
   private fallbackSubagentCardIdsByParent: Map<string, string[]> = new Map();
+  // Root task calls still open, each with the card it was matched to once that is known.
+  private openTaskCalls: Map<string, { parentSessionId: string; cardId: string | null }> =
+    new Map();
   private finishedSubagentSessionIds: Set<string> = new Set();
   private acceptsSubagentEvents = false;
   private subagentRunStartedAt = 0;
@@ -707,6 +710,7 @@ export class SummaryAggregator {
     this.pendingSubagentCardIdsByParent.clear();
     this.pendingChildSessionIdsByParent.clear();
     this.fallbackSubagentCardIdsByParent.clear();
+    this.openTaskCalls.clear();
     this.finishedSubagentSessionIds.clear();
     this.acceptsSubagentEvents = false;
     this.subagentRunStartedAt = 0;
@@ -844,6 +848,13 @@ export class SummaryAggregator {
     for (const cardId of [...this.subagentOrder]) {
       if (!this.isRunningBackgroundSubagent(cardId)) {
         this.retireSubagent(cardId);
+      }
+    }
+
+    // A call that never reported its end must not keep a later turn's pairing ambiguous.
+    for (const [callId, call] of this.openTaskCalls) {
+      if (!call.cardId || !this.subagentStates.has(call.cardId)) {
+        this.openTaskCalls.delete(callId);
       }
     }
   }
@@ -1068,22 +1079,80 @@ export class SummaryAggregator {
     this.applyPendingBackgroundIntent(sessionId, state);
   }
 
-  private findNextSubagentForTaskTool(parentSessionId: string): SubagentState | null {
-    for (const cardId of this.subagentOrder) {
-      const state = this.subagentStates.get(cardId);
-      if (state && state.parentSessionId === parentSessionId && !state.hasTaskToolMetadata) {
-        return state;
+  /**
+   * The card a root task call belongs to: the card of the child session the call names,
+   * or - while it names none - the only card still waiting for its call, when this is
+   * the only call still waiting for a card. Any other guess could put one subagent's
+   * task on another subagent's card. An ended card is retired at once, so it never waits.
+   */
+  private findSubagentForTaskCall(
+    callId: string,
+    childSessionId: string | undefined,
+  ): SubagentState | null {
+    const call = this.openTaskCalls.get(callId);
+    if (!call) {
+      return null;
+    }
+
+    if (call.cardId) {
+      return this.subagentStates.get(call.cardId) ?? null;
+    }
+
+    let cardId: string | undefined;
+    if (childSessionId) {
+      cardId = this.subagentCardIdBySessionId.get(childSessionId);
+    } else {
+      const openCalls = [...this.openTaskCalls.values()];
+      const linkedCardIds = new Set(openCalls.map((openCall) => openCall.cardId));
+      const waitingCalls = openCalls.filter(
+        (openCall) => openCall.parentSessionId === call.parentSessionId && !openCall.cardId,
+      );
+      const waitingCards = this.subagentOrder
+        .map((orderedCardId) => this.subagentStates.get(orderedCardId))
+        .filter(
+          (state): state is SubagentState =>
+            state !== undefined &&
+            state.parentSessionId === call.parentSessionId &&
+            !state.hasTaskToolMetadata &&
+            !linkedCardIds.has(state.cardId),
+        );
+      if (waitingCalls.length === 1 && waitingCards.length === 1) {
+        cardId = waitingCards[0]!.cardId;
       }
     }
 
-    return null;
+    if (!cardId) {
+      return null;
+    }
+
+    call.cardId = cardId;
+    return this.subagentStates.get(cardId) ?? null;
   }
 
   private updateSubagentFromTaskTool(
     parentSessionId: string,
-    input?: { [key: string]: unknown },
+    callId: string,
+    state: ToolState,
   ): void {
-    const subagent = this.findNextSubagentForTaskTool(parentSessionId);
+    const status = "status" in state ? state.status : undefined;
+    const hasEnded = status === "completed" || status === "error";
+    if (!this.openTaskCalls.has(callId)) {
+      if (hasEnded) {
+        return;
+      }
+      this.openTaskCalls.set(callId, { parentSessionId, cardId: null });
+    }
+
+    const childSessionId =
+      "metadata" in state && typeof state.metadata?.sessionId === "string"
+        ? state.metadata.sessionId
+        : undefined;
+    const subagent = this.findSubagentForTaskCall(callId, childSessionId);
+    if (hasEnded) {
+      this.openTaskCalls.delete(callId);
+    }
+
+    const input = state.input;
     if (!subagent || !input) {
       return;
     }
@@ -1659,7 +1728,7 @@ export class SummaryAggregator {
       const title = "title" in state ? state.title : undefined;
 
       if (part.tool === "task") {
-        this.updateSubagentFromTaskTool(part.sessionID, input);
+        this.updateSubagentFromTaskTool(part.sessionID, part.callID, state);
 
         const childSessionId =
           "metadata" in state && state.metadata ? state.metadata.sessionId : undefined;

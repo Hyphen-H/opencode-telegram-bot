@@ -78,6 +78,15 @@ export function toV1ToolInput(tool: string, input: JsonRecord): JsonRecord {
 
 /** Adds the V1 file-change field names the formatters read, keeping the V2 ones. */
 export function toV1ToolMetadata(tool: string, metadata: JsonRecord): JsonRecord {
+  // A subagent call names its child session under the V1 key too, so its card is found.
+  if (
+    tool === "task" &&
+    typeof metadata.sessionID === "string" &&
+    metadata.sessionId === undefined
+  ) {
+    return { ...metadata, sessionId: metadata.sessionID };
+  }
+
   if (!Array.isArray(metadata.files)) {
     return metadata;
   }
