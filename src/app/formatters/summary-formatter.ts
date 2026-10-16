@@ -325,6 +325,11 @@ export function formatToolInfo(toolInfo: ToolInfo): string | null {
     details = truncateWithEllipsis(input.command, config.bot.bashToolDisplayMaxLength);
   }
 
+  // Code Mode code is cut like a bash command
+  if (tool === "execute" && input && typeof input.code === "string") {
+    details = truncateWithEllipsis(input.code, config.bot.bashToolDisplayMaxLength);
+  }
+
   if (tool === "apply_patch") {
     details = getFirstPatchFile(toolInfo);
   }

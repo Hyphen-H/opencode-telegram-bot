@@ -610,6 +610,24 @@ describe("summary/subagent-formatter", () => {
 
       expect(text.split("\n").at(-1)).toBe("💻 bash npm test");
     });
+
+    it("shows a long execute step as its cut code, not its title", async () => {
+      setRuntimeLocale("en");
+
+      const text = await renderSubagentCard(
+        buildSubagent({
+          currentTool: "execute",
+          currentToolInput: { code: `return 1;\n${"c".repeat(200)}` },
+          currentToolTitle: "Run code",
+          currentToolStartedAt: now,
+        }),
+        now,
+      );
+
+      const line = text.split("\n").at(-1);
+      expect(line).toMatch(/^🛠️ execute return 1; c+\.\.\.$/);
+      expect(line).toHaveLength(128);
+    });
   });
 
   describe("total run time of a finished subagent", () => {

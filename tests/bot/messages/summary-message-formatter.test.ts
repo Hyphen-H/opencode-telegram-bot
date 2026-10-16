@@ -274,6 +274,75 @@ describe("bot/messages/summary-message-formatter", () => {
     expect(text).toHaveLength("💻 bash ".length + 128);
   });
 
+  it("truncates long execute code like a bash command, over its title", () => {
+    const longCode = `const files = await tools.glob({ pattern: "**/*.ts" });\n${"a".repeat(160)}`;
+
+    const text = formatToolInfo({
+      sessionId: "s1",
+      messageId: "m4e",
+      callId: "c4e",
+      tool: "execute",
+      state: { status: "completed" } as never,
+      title: "Run code",
+      input: {
+        code: longCode,
+      },
+    });
+
+    expect(text).toBe(`🛠️ execute ${longCode.slice(0, 125)}...`);
+  });
+
+  it("shows short execute code whole with its newlines", () => {
+    const text = formatToolInfo({
+      sessionId: "s1",
+      messageId: "m4f",
+      callId: "c4f",
+      tool: "execute",
+      state: { status: "running" } as never,
+      input: {
+        code: "const a = 1;\nreturn a;",
+      },
+    });
+
+    expect(text).toBe("🛠️ execute const a = 1;\nreturn a;");
+  });
+
+  it("keeps execute uncut when its code is not text", () => {
+    const text = formatToolInfo({
+      sessionId: "s1",
+      messageId: "m4g",
+      callId: "c4g",
+      tool: "execute",
+      state: { status: "running" } as never,
+      title: "Run code",
+      input: {
+        code: 42,
+      },
+    });
+
+    expect(text).toBe("🛠️ execute Run code");
+  });
+
+  it("cuts a compact execute line at the compact limit", () => {
+    const text = formatCompactToolActivity(
+      {
+        sessionId: "s1",
+        messageId: "m4h",
+        callId: "c4h",
+        tool: "execute",
+        state: { status: "running" } as never,
+        input: {
+          code: `return 1;\n${"b".repeat(200)}`,
+        },
+      },
+      128,
+    );
+
+    expect(text).toBe(
+      `🛠️ execute return 1; ${"b".repeat(128 - "🛠️ execute return 1; ".length - 3)}...`,
+    );
+  });
+
   it("formats apply_patch tool details without dumping full patch", () => {
     const text = formatToolInfo({
       sessionId: "s1",
