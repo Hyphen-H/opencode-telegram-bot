@@ -509,6 +509,8 @@ describe("bot/services/event-subscription-service", () => {
   let activeService: {
     cleanup(reason: string): void;
     stopBackgroundOperations(reason: string, sessionId?: string): void;
+    countBackgroundOperations(sessionId: string): number;
+    interruptSubagents(reason: string): void;
   } | null = null;
   let activeContainer: AppContainer;
 
@@ -1954,6 +1956,159 @@ describe("bot/services/event-subscription-service", () => {
       const texts = collectSentTexts(api);
       expect(texts.some((text) => text.includes("✅ Finished Work"))).toBe(false);
       expect(texts.at(-1)).toMatch(/⏳ Working[\s\S]*sleep 90 · 🕒 \d+[ms]/);
+
+      emitBackgroundBash(summaryAggregator, "completed");
+      await flushPendingDispatch();
+
+      const finished = collectSentTexts(api).filter((text) => text.includes("✅ Finished Work"));
+      expect(finished).toHaveLength(1);
+      expect(finished[0]).toContain("tool calls: 1");
+    });
+
+    function emitBackgroundTask(
+      summaryAggregator: { processEvent(event: Event): void },
+      status: "running" | "completed",
+    ): void {
+      summaryAggregator.processEvent({
+        type: "message.part.updated",
+        properties: {
+          part: {
+            id: "part-call-task",
+            sessionID: "session-1",
+            messageID: "message-1",
+            type: "tool",
+            callID: "call-task",
+            tool: "task",
+            state: {
+              status,
+              input: { description: "inspect task 1", background: true },
+              metadata: { sessionId: "child-session-1" },
+              ...(status === "completed" ? { output: "done" } : {}),
+            },
+          },
+        },
+      } as unknown as Event);
+    }
+
+    /** The run is stopped as `/abort` stops it: OpenCode's interrupted idle, then the interrupt. */
+    async function interruptRun(summaryAggregator: { processEvent(event: Event): void }) {
+      summaryAggregator.processEvent({
+        type: "session.idle",
+        properties: { sessionID: "session-1", interrupted: true },
+      } as unknown as Event);
+      await flushPendingDispatch();
+      activeService?.interruptSubagents("test");
+      await flushPendingDispatch();
+    }
+
+    it("keeps counting a background command through an interrupted run and finishes it", async () => {
+      const { api, summaryAggregator } = await setupService(false, { startAssistantRun: true });
+      let nextMessageId = 100;
+      api.sendMessage.mockImplementation(async () => ({ message_id: nextMessageId++ }));
+      useTrackerFakeTimers();
+      emitBackgroundBash(summaryAggregator, "running");
+      await flushPendingDispatch();
+      const lineMessageId = nextMessageId - 1;
+
+      await interruptRun(summaryAggregator);
+      await vi.advanceTimersByTimeAsync(30_000);
+      const lineEdits = () =>
+        api.editMessageText.mock.calls
+          .filter((call) => call[1] === lineMessageId)
+          .map((call) => String(call[2]));
+      expect(lineEdits().at(-1)).toMatch(/⏳ .*sleep 90 · 🕒 \d+[ms]/);
+
+      emitBackgroundBash(summaryAggregator, "completed");
+      await flushPendingDispatch();
+      expect(lineEdits().at(-1)).toMatch(/sleep 90 · 🕒 \d+[ms]/);
+      expect(lineEdits().at(-1)).not.toContain("⏳");
+    });
+
+    it("keeps a background subagent's card running through an interrupted run", async () => {
+      const { api, summaryAggregator } = await setupService(false, { startAssistantRun: true });
+      let nextMessageId = 100;
+      api.sendMessage.mockImplementation(async () => ({ message_id: nextMessageId++ }));
+      useTrackerFakeTimers();
+      emitSubagentStart(summaryAggregator);
+      emitBackgroundTask(summaryAggregator, "running");
+      await flushPendingDispatch();
+      const cardMessageId = nextMessageId - 1;
+
+      await interruptRun(summaryAggregator);
+      emitSubagentTool(summaryAggregator);
+      await vi.advanceTimersByTimeAsync(25_000);
+      await flushPendingDispatch();
+      const cardEdits = () =>
+        api.editMessageText.mock.calls
+          .filter((call) => call[1] === cardMessageId)
+          .map((call) => String(call[2]));
+      expect(cardEdits().at(-1)).toMatch(/npm run lint · 🕒 \d+s/);
+      expect(collectSentTexts(api).some((text) => text.includes("Interrupted"))).toBe(false);
+
+      emitQuestionAsked(summaryAggregator, "q-bg", "child-session-1");
+      await flushPendingDispatch();
+      expect(collectSentTexts(api).some((text) => text.includes("Which option for q-bg?"))).toBe(
+        true,
+      );
+
+      summaryAggregator.processEvent({
+        type: "session.idle",
+        properties: { sessionID: "child-session-1" },
+      } as unknown as Event);
+      await flushPendingDispatch();
+      expect(cardEdits().at(-1)).toMatch(/✅ Completed · 🕒/);
+    });
+
+    it("stops updating background operations once /start leaves the session", async () => {
+      const { api, summaryAggregator } = await setupService(false, { startAssistantRun: true });
+      const sessionService = await import("../../../src/app/services/session-service.js");
+      useTrackerFakeTimers();
+      emitSubagentStart(summaryAggregator);
+      emitBackgroundTask(summaryAggregator, "running");
+      emitBackgroundBash(summaryAggregator, "running");
+      await flushPendingDispatch();
+      await interruptRun(summaryAggregator);
+
+      sessionService.clearSession();
+      await vi.advanceTimersByTimeAsync(30_000);
+      const textsBefore = collectSentTexts(api).length;
+      emitSubagentTool(summaryAggregator);
+      emitQuestionAsked(summaryAggregator, "q-left", "child-session-1");
+      await vi.advanceTimersByTimeAsync(60_000);
+      emitBackgroundBash(summaryAggregator, "completed");
+      await flushPendingDispatch();
+
+      expect(collectSentTexts(api).slice(textsBefore)).toEqual([]);
+    });
+
+    it.each([false, true])(
+      "counts a background command and a background subagent alike in compact mode %s",
+      async (compact) => {
+        const { summaryAggregator } = await setupService(false, { startAssistantRun: true });
+        if (compact) {
+          await useCompactMode();
+        }
+        useTrackerFakeTimers();
+        emitSubagentStart(summaryAggregator);
+        emitBackgroundTask(summaryAggregator, "running");
+        emitBackgroundBash(summaryAggregator, "running");
+        await flushPendingDispatch();
+        await interruptRun(summaryAggregator);
+
+        expect(activeService?.countBackgroundOperations("session-1")).toBe(2);
+      },
+    );
+
+    it("closes the parked compact card when a command outliving an interrupted run ends", async () => {
+      const { api, summaryAggregator } = await setupService(false, { startAssistantRun: true });
+      await useCompactMode();
+      useTrackerFakeTimers();
+      emitBackgroundBash(summaryAggregator, "running");
+      await flushPendingDispatch();
+
+      await interruptRun(summaryAggregator);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(collectSentTexts(api).at(-1)).toMatch(/⏳ Working[\s\S]*sleep 90 · 🕒 \d+[ms]/);
 
       emitBackgroundBash(summaryAggregator, "completed");
       await flushPendingDispatch();

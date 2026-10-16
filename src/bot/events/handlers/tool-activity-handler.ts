@@ -176,14 +176,11 @@ async function renderSubagentCards(
     const streamKey = getSubagentStreamKey(subagent.cardId);
     runtime.toolCallStreamer.replaceByPrefix(sessionId, SUBAGENT_STREAM_PREFIX, text, streamKey);
 
-    // A background subagent's card keeps updating after its parent's turn ends, and an
-    // interrupted one still takes the real end its subagent may report later; so does a
+    // A background subagent's card keeps updating after its parent's turn ends; so does a
     // card waiting on a nested subagent it launched in the background.
     if (
       outlivesParentTurn(subagent) &&
-      (subagent.status === "pending" ||
-        subagent.status === "running" ||
-        subagent.status === "interrupted")
+      (subagent.status === "pending" || subagent.status === "running")
     ) {
       runtime.toolCallStreamer.pinEntry(sessionId, SUBAGENT_STREAM_PREFIX, streamKey);
     } else {
