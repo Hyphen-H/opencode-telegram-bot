@@ -1,13 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   formatSummary,
   formatSummaryWithMode,
 } from "../../../src/bot/messages/summary-message-formatter.js";
 import {
   formatCompactToolActivity,
+  formatRunningTaskLine,
   formatToolInfo,
   prepareCodeFile,
 } from "../../../src/app/formatters/summary-formatter.js";
+import { resetRuntimeLocale, setRuntimeLocale } from "../../../src/i18n/index.js";
 import { defined } from "../../helpers/defined.js";
 
 const mocked = vi.hoisted(() => ({
@@ -523,6 +525,56 @@ describe("bot/messages/summary-message-formatter", () => {
         },
       });
       expect(formatCompactToolActivity(finished, 128)).toBe("🩹 apply_patch src/a.ts (+1)");
+    });
+  });
+
+  describe("running task line", () => {
+    beforeEach(() => {
+      setRuntimeLocale("en");
+    });
+
+    afterEach(() => {
+      resetRuntimeLocale();
+    });
+
+    it("names the task from its description, never from its prompt", () => {
+      const line = formatRunningTaskLine({
+        description: "Count Kotlin files",
+        prompt: "Count the number of Kotlin files under src/main",
+      });
+
+      expect(line).toBe("🤖 Running Task: Count Kotlin files");
+    });
+
+    it.each([
+      ["no input", undefined],
+      ["a prompt only", { prompt: "Count the files" }],
+      ["a blank description", { description: " \n\t " }],
+      ["a description that is not text", { description: 42 }],
+    ])("shows the bare line for %s", (_case, input) => {
+      expect(formatRunningTaskLine(input)).toBe("🤖 Running Task");
+    });
+
+    it("shows a multi-line description on one line", () => {
+      expect(formatRunningTaskLine({ description: "  Count\n  Kotlin   files\n" })).toBe(
+        "🤖 Running Task: Count Kotlin files",
+      );
+    });
+
+    it("cuts the whole line at the activity-line length with an ellipsis", () => {
+      const line = formatRunningTaskLine({ description: "word ".repeat(60) });
+
+      expect(line.length).toBeLessThanOrEqual(128);
+      expect(line.startsWith("🤖 Running Task: word word")).toBe(true);
+      expect(line.endsWith("…")).toBe(true);
+    });
+
+    it("keeps the locale's own label", () => {
+      setRuntimeLocale("ru");
+
+      expect(formatRunningTaskLine({ description: "Count Kotlin files" })).toBe(
+        "🤖 Выполняю задачу: Count Kotlin files",
+      );
     });
   });
 });

@@ -163,6 +163,8 @@ export interface SubagentInfo {
   background?: boolean | undefined;
   /** When the newest of the nested subagents it launched, still running, started. */
   launchStartedAt?: number | undefined;
+  /** The task of that newest launch, from its call's description. */
+  launchDescription?: string | undefined;
   /** A nested subagent it launched in the background still runs: the card outlives its parent's turn. */
   waitsOnBackgroundLaunch?: boolean | undefined;
   createdAt: number;
@@ -240,6 +242,8 @@ interface SubagentLaunch {
   background: boolean;
   /** The call carries its arguments, so the launch may be shown. */
   shown: boolean;
+  /** The latest description its call reported. */
+  description?: string | undefined;
 }
 
 type SubagentEndStatus = Extract<SubagentStatus, "completed" | "error" | "interrupted">;
@@ -939,11 +943,11 @@ export class SummaryAggregator {
     return [...state.launches.values()].some((launch) => launch.background);
   }
 
-  private getNewestLaunchStartedAt(state: SubagentState): number | undefined {
-    let newest: number | undefined;
+  private getNewestLaunch(state: SubagentState): SubagentLaunch | undefined {
+    let newest: SubagentLaunch | undefined;
     for (const launch of state.launches.values()) {
-      if (launch.shown && (newest === undefined || launch.startedAt >= newest)) {
-        newest = launch.startedAt;
+      if (launch.shown && (newest === undefined || launch.startedAt >= newest.startedAt)) {
+        newest = launch;
       }
     }
     return newest;
@@ -1107,7 +1111,8 @@ export class SummaryAggregator {
         currentToolStartedAt: state.currentToolStartedAt,
         terminalMessage: state.terminalMessage,
         background: state.background,
-        launchStartedAt: this.getNewestLaunchStartedAt(state),
+        launchStartedAt: this.getNewestLaunch(state)?.startedAt,
+        launchDescription: this.getNewestLaunch(state)?.description,
         waitsOnBackgroundLaunch: this.hasBackgroundLaunch(state),
         createdAt: state.createdAt,
         finishedAt: state.finishedAt,
@@ -1137,6 +1142,7 @@ export class SummaryAggregator {
         terminalMessage: subagent.terminalMessage,
         background: subagent.background,
         launchStartedAt: subagent.launchStartedAt,
+        launchDescription: subagent.launchDescription,
         waitsOnBackgroundLaunch: subagent.waitsOnBackgroundLaunch,
         finishedAt: subagent.finishedAt,
       })),
@@ -1615,13 +1621,16 @@ export class SummaryAggregator {
 
     const shown = Object.keys(state.input ?? {}).length > 0;
     const background = isBackgroundTaskCall(state);
+    const description =
+      typeof state.input?.description === "string" ? state.input.description : undefined;
     if (!launch) {
-      subagent.launches.set(callId, { startedAt: Date.now(), background, shown });
+      subagent.launches.set(callId, { startedAt: Date.now(), background, shown, description });
       return true;
     }
 
     launch.background ||= background;
     launch.shown ||= shown;
+    launch.description = description ?? launch.description;
     if (subagent.currentToolCallId === callId) {
       return true;
     }

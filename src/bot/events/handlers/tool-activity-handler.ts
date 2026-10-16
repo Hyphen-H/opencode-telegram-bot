@@ -1,4 +1,3 @@
-import { t } from "../../../i18n/index.js";
 import { logger } from "../../../utils/logger.js";
 import {
   outlivesParentTurn,
@@ -8,6 +7,7 @@ import {
 import {
   formatCompactToolActivity,
   formatCompactToolInfo,
+  formatRunningTaskLine,
   formatToolInfo,
 } from "../../../app/formatters/summary-formatter.js";
 import { renderSubagentCard } from "../../../app/formatters/subagent-formatter.js";
@@ -88,7 +88,7 @@ function isComposing(toolInfo: ToolInfo): boolean {
 
 function getCompactToolActivity(toolInfo: ToolInfo): string {
   if (toolInfo.tool === "task") {
-    return t("progress.compact.task");
+    return formatRunningTaskLine(toolInfo.input);
   }
 
   return (

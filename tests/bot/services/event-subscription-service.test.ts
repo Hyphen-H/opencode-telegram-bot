@@ -268,7 +268,11 @@ function emitBareTool(
 
 function emitTaskTool(
   summaryAggregator: { processEvent(event: Event): void },
-  options: { callId?: string; status?: "running" | "completed" | "error" } = {},
+  options: {
+    callId?: string;
+    status?: "running" | "completed" | "error";
+    description?: string;
+  } = {},
 ): void {
   const callId = options.callId ?? "call-task";
   const status = options.status ?? "running";
@@ -285,7 +289,7 @@ function emitTaskTool(
         state: {
           status,
           input: {
-            description: "Explore the project",
+            description: options.description ?? "Explore the project",
             subagent_type: "explore",
             prompt: "Inspect architecture",
           },
@@ -929,9 +933,33 @@ describe("bot/services/event-subscription-service", () => {
       await vi.advanceTimersByTimeAsync(ELAPSED_SETTLE_MS);
 
       const texts = collectSentTexts(api);
-      expect(texts.some((text) => text.includes("Running Task") && text.includes("· 🕒 20s"))).toBe(
-        true,
-      );
+      expect(
+        texts.some((text) => text.includes("🤖 Running Task: Explore the project · 🕒 20s")),
+      ).toBe(true);
+      expect(texts.some((text) => text.includes("Inspect architecture"))).toBe(false);
+    });
+
+    it("names the most recently started of parallel launches in compact mode", async () => {
+      const { api, summaryAggregator } = await setupService(false);
+      const settingsStore = await import("../../../src/app/stores/settings-store.js");
+      settingsStore.setCompactOutputMode(true);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      useTrackerFakeTimers();
+      emitTaskTool(summaryAggregator, { callId: "call-older", description: "Explore the project" });
+      await vi.advanceTimersByTimeAsync(1_000);
+      emitTaskTool(summaryAggregator, { callId: "call-newer", description: "Count Kotlin files" });
+      await flushPendingDispatch();
+      expect(collectSentTexts(api).pop() ?? "").toContain("🤖 Running Task: Count Kotlin files");
+
+      // An older launch reporting again does not take the line back.
+      emitTaskTool(summaryAggregator, { callId: "call-older", description: "Explore the project" });
+      await flushPendingDispatch();
+      expect(collectSentTexts(api).pop() ?? "").toContain("🤖 Running Task: Count Kotlin files");
+
+      emitTaskTool(summaryAggregator, { callId: "call-newer", status: "completed" });
+      await flushPendingDispatch();
+      expect(collectSentTexts(api).pop() ?? "").toContain("🤖 Running Task: Explore the project");
     });
 
     it("falls back to the still-running bash after parallel reads finish in compact mode", async () => {
@@ -1911,12 +1939,17 @@ describe("bot/services/event-subscription-service", () => {
         api.editMessageText.mock.calls
           .filter((call) => call[1] === cardMessageId)
           .map((call) => String(call[2]));
-      expect(cardEdits().at(-1)).toMatch(/🤖 Running Task · 🕒 \d+s$/);
+      expect(cardEdits().at(-1)).toMatch(/🤖 Running Task: Count Kotlin files · 🕒 \d+s$/);
 
       emitLaunch("completed");
       await flushPendingDispatch();
       expect(cardEdits().at(-1)).toMatch(/✅ Completed · 🕒/);
-      expect(collectSentTexts(api).some((text) => text.includes("Count Kotlin files"))).toBe(false);
+      // The nested subagent is named only on its parent's line, never on a card of its own.
+      expect(
+        collectSentTexts(api).some((text) =>
+          /🧩 (Task|Starting task): Count Kotlin files/.test(text),
+        ),
+      ).toBe(false);
     });
 
     it("stops a background command once its session is no longer current", async () => {
@@ -2098,6 +2131,20 @@ describe("bot/services/event-subscription-service", () => {
         expect(activeService?.countBackgroundOperations("session-1")).toBe(2);
       },
     );
+
+    it("keeps a compact background launch named through an interrupted run", async () => {
+      const { api, summaryAggregator } = await setupService(false, { startAssistantRun: true });
+      await useCompactMode();
+      useTrackerFakeTimers();
+      emitBackgroundTask(summaryAggregator, "running");
+      await flushPendingDispatch();
+
+      await interruptRun(summaryAggregator);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(collectSentTexts(api).at(-1)).toMatch(
+        /⏳ Working[\s\S]*🤖 Running Task: inspect task 1 · 🕒 \d+[ms]/,
+      );
+    });
 
     it("closes the parked compact card when a command outliving an interrupted run ends", async () => {
       const { api, summaryAggregator } = await setupService(false, { startAssistantRun: true });

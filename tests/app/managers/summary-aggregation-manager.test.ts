@@ -1278,10 +1278,38 @@ describe("summary/aggregator", () => {
         expect(lastCard(onSubagent)).toMatchObject({
           currentTool: undefined,
           launchStartedAt: 1_000,
+          launchDescription: "Again",
         });
 
         emitLaunch("launch-1", "completed");
-        expect(lastCard(onSubagent)).toMatchObject({ launchStartedAt: undefined });
+        expect(lastCard(onSubagent)).toMatchObject({
+          launchStartedAt: undefined,
+          launchDescription: undefined,
+        });
+      });
+
+      it("names the newest open launch's task as its call last reported it", () => {
+        const onSubagent = vi.fn();
+        summaryAggregator.setOnSubagent(onSubagent);
+        startSubagent();
+
+        at(1_000, () => emitLaunch("launch-1", "running", { prompt: "Count" }));
+        expect(lastCard(onSubagent)).toMatchObject({
+          launchStartedAt: 1_000,
+          launchDescription: undefined,
+        });
+
+        at(2_000, () =>
+          emitLaunch("launch-1", "running", { prompt: "Count", description: "Count" }),
+        );
+        expect(lastCard(onSubagent)).toMatchObject({
+          currentToolInput: { prompt: "Count", description: "Count" },
+          launchDescription: "Count",
+        });
+
+        // A later event without it keeps the task the call already named.
+        at(3_000, () => emitLaunch("launch-1", "running", { prompt: "Count" }));
+        expect(lastCard(onSubagent)).toMatchObject({ launchDescription: "Count" });
       });
 
       it("leaves the line to a newer tool when a background launch ends", () => {
