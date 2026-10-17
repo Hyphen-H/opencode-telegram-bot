@@ -2287,7 +2287,10 @@ describe("bot/services/event-subscription-service", () => {
       { timeout: 3000 },
     );
     expect(defined(api.sendMessage.mock.calls[0]?.[1])).toBe("Final answer");
-    expect(defined(api.sendMessage.mock.calls[0])[2]).toEqual({ disable_notification: true });
+    expect(defined(api.sendMessage.mock.calls[0])[2]).toEqual({
+      disable_notification: true,
+      link_preview_options: { is_disabled: false },
+    });
     expect(defined(api.sendMessage.mock.calls[1]?.[1])).toContain("test-provider/test-model");
     expect(api.sendMessageDraft).not.toHaveBeenCalled();
   });
