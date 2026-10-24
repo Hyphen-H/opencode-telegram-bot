@@ -70,4 +70,21 @@ describe("/recent and picker", () => {
     expect(mocked.switch).not.toHaveBeenCalled();
     expect(mocked.select).not.toHaveBeenCalled();
   });
+
+  it("selects a grouped temporary session using its original directory, never its index link", async () => {
+    const deps = createTestAppContainer();
+    const directory = "/root/.config/openchamber/chats/2026-10-24/session-abc";
+    mocked.currentProject = { worktree: "/root/bench" };
+    startInteractionForTest(deps.interactionManager, {
+      kind: "inline", expectedInput: "callback",
+      metadata: { menuKind: "recent", messageId: 20, temporarySessions: true, sessionIds: ["ses_temp"], directories: [directory] },
+    });
+    mocked.get.mockResolvedValue({ data: { id: "ses_temp", projectID: "global", directory, title: "Real temporary title" }, error: null });
+    const ctx = context("recent:0");
+    await handleRecentSelect(ctx, { ...deps, bot: {} } as never);
+    expect(mocked.get).toHaveBeenCalledWith({ sessionID: "ses_temp", directory });
+    expect(mocked.switch).toHaveBeenCalledWith(ctx, { id: "global", worktree: directory, name: directory }, "recent_project_switched", expect.anything());
+    expect(mocked.select).toHaveBeenCalledWith(ctx, expect.anything(), "ses_temp", expect.objectContaining({ postSelectAction: "preview" }));
+    expect(mocked.switch.mock.invocationCallOrder[0]).toBeLessThan(mocked.select.mock.invocationCallOrder[0]!);
+  });
 });

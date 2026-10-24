@@ -18,6 +18,7 @@ import {
 } from "./model-selection-callback-handler.js";
 import { handlePermissionCallback } from "./permission-callback-handler.js";
 import { handleProjectSelect } from "./project-callback-handler.js";
+import { handleTemporarySessionsCallback } from "../menus/temporary-sessions-menu.js";
 import { handlePromptAttachmentCancel } from "./prompt-attachment-callback-handler.js";
 import { handleQuestionCallback } from "./question-callback-handler.js";
 import { handleRecentSelect } from "./recent-callback-handler.js";
@@ -87,7 +88,14 @@ export function registerCallbackRouter(bot: Bot<Context>, deps: CallbackRouterDe
     ],
     [
       "compact",
-      { name: "compact", handlers: [(ctx) => handleCompactDetails(ctx, container), (ctx) => handleCompactConfirm(ctx, container)], errorScope: "interaction" },
+      {
+        name: "compact",
+        handlers: [
+          (ctx) => handleCompactDetails(ctx, container),
+          (ctx) => handleCompactConfirm(ctx, container),
+        ],
+        errorScope: "interaction",
+      },
     ],
     [
       "ls",
@@ -146,7 +154,10 @@ export function registerCallbackRouter(bot: Bot<Context>, deps: CallbackRouterDe
       "project",
       {
         name: "project",
-        handlers: [(ctx) => handleProjectSelect(ctx, container)],
+        handlers: [
+          (ctx) => handleTemporarySessionsCallback(ctx, container),
+          (ctx) => handleProjectSelect(ctx, container),
+        ],
         errorScope: "interaction",
       },
     ],
@@ -155,6 +166,14 @@ export function registerCallbackRouter(bot: Bot<Context>, deps: CallbackRouterDe
       {
         name: "projects",
         handlers: [(ctx) => handleProjectSelect(ctx, container)],
+        errorScope: "interaction",
+      },
+    ],
+    [
+      "temporary",
+      {
+        name: "temporary",
+        handlers: [(ctx) => handleTemporarySessionsCallback(ctx, container)],
         errorScope: "interaction",
       },
     ],
@@ -168,7 +187,11 @@ export function registerCallbackRouter(bot: Bot<Context>, deps: CallbackRouterDe
     ],
     [
       "recent",
-      { name: "recent", handlers: [(ctx) => handleRecentSelect(ctx, botDeps)], errorScope: "interaction" },
+      {
+        name: "recent",
+        handlers: [(ctx) => handleRecentSelect(ctx, botDeps)],
+        errorScope: "interaction",
+      },
     ],
     [
       "rename",

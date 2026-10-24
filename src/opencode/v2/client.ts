@@ -1,4 +1,10 @@
-import type { Event, FilePartInput, OpencodeClient, TextPartInput } from "@opencode-ai/sdk/v2";
+import type {
+  Event,
+  FilePartInput,
+  GlobalSession,
+  OpencodeClient,
+  TextPartInput,
+} from "@opencode-ai/sdk/v2";
 import {
   OpenCode,
   type FormInfo,
@@ -50,6 +56,7 @@ interface PromptParams {
  */
 export interface V2ClientExtension {
   session: {
+    listGlobalRoots: () => Promise<Result<GlobalSession[]>>;
     /** Sends a prompt into the session inbox and returns the id it waits under. */
     promptAsync: (
       params: PromptParams & { directory?: string; delivery: V2InboxDelivery },
@@ -456,6 +463,24 @@ export function createV2OpencodeClient(options: V2ClientOptions): OpencodeClient
       },
     },
     session: {
+      listGlobalRoots: () =>
+        run(async () => {
+          const sessions: GlobalSession[] = [];
+          let cursor: string | undefined;
+          do {
+            const result = await client.session.list({
+              limit: 200,
+              parentID: null,
+              ...(cursor ? { cursor } : { order: "desc" }),
+            });
+            sessions.push(...result.data.map(toV1GlobalSession));
+            const next = result.cursor.next ?? undefined;
+            if (next && next === cursor)
+              throw new Error("Session pagination cursor did not advance");
+            cursor = next;
+          } while (cursor);
+          return sessions;
+        }),
       list: (params: { directory?: string; limit?: number; roots?: boolean }) =>
         run(async () => {
           const result = await client.session.list({

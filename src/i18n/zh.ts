@@ -1,6 +1,7 @@
 import type { I18nDictionary } from "./en.js";
 
 export const zh: I18nDictionary = {
+  "projects.temporary": "临时会话",
   "projects.new": "➕ 新建项目",
   "open.new_folder": "📁 新建文件夹",
   "open.enter_path": "✏️ 输入路径",

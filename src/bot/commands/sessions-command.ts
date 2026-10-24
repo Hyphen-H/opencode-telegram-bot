@@ -8,6 +8,8 @@ import { logger } from "../../utils/logger.js";
 import { config } from "../../config.js";
 import { t } from "../../i18n/index.js";
 import { buildSessionSelectionMenuView, loadSessionPage } from "../menus/session-selection-menu.js";
+import { isTemporarySessionDirectory } from "../../app/services/temporary-sessions-service.js";
+import { showTemporarySessions } from "../menus/temporary-sessions-menu.js";
 
 export type SessionsCommandDeps = Pick<
   AppContainer,
@@ -33,6 +35,11 @@ export async function sessionsCommand(
     }
 
     logger.debug(`[Sessions] Fetching sessions for directory: ${currentProject.worktree}`);
+
+    if (isTemporarySessionDirectory(currentProject.worktree)) {
+      await showTemporarySessions(ctx, deps);
+      return;
+    }
 
     const firstPage = await loadSessionPage(currentProject.worktree, 0, pageSize);
 

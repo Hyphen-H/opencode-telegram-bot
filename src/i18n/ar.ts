@@ -8,6 +8,7 @@ import type { I18nDictionary } from "./en.js";
  * Keep this dictionary complete to avoid falling back to another locale.
  */
 export const ar: I18nDictionary = {
+  "projects.temporary": "Temporary sessions",
   "projects.new": "➕ New project",
   "open.new_folder": "📁 New folder",
   "open.enter_path": "✏️ Enter path",

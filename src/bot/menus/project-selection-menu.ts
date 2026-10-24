@@ -5,6 +5,10 @@ import { getCurrentProject } from "../../app/stores/settings-store.js";
 import { logger } from "../../utils/logger.js";
 import { config } from "../../config.js";
 import type { ProjectInfo } from "../../app/types/project.js";
+import {
+  TEMPORARY_PROJECT_ID,
+  isTemporarySessionDirectory,
+} from "../../app/services/temporary-sessions-service.js";
 
 const MAX_INLINE_BUTTON_LABEL_LENGTH = 64;
 export const PROJECT_PAGE_CALLBACK_PREFIX = "projects:page:";
@@ -137,10 +141,15 @@ async function buildProjectsKeyboard(
     const isActive =
       currentProject &&
       (project.id === currentProject.id ||
+        (project.id === TEMPORARY_PROJECT_ID &&
+          isTemporarySessionDirectory(currentProject.worktree)) ||
         project.worktree === currentProject.worktree ||
         (activeProjectWorktree !== null &&
           worktreeKey(project.worktree) === worktreeKey(activeProjectWorktree)));
-    const label = buildProjectButtonLabel(startIndex + index, project.worktree);
+    const label =
+      project.id === TEMPORARY_PROJECT_ID
+        ? `${startIndex + index + 1}. ${t("projects.temporary")}`
+        : buildProjectButtonLabel(startIndex + index, project.worktree);
     const labelWithCheck = formatProjectButtonLabel(label, Boolean(isActive));
     keyboard.text(labelWithCheck, `project:${project.id}`).row();
   });
@@ -176,7 +185,10 @@ export async function buildProjectsMenuView(
     page,
     pageSize,
   );
-  const currentProjectName = currentProject?.name || currentProject?.worktree || null;
+  const currentProjectName =
+    currentProject && isTemporarySessionDirectory(currentProject.worktree)
+      ? t("projects.temporary")
+      : currentProject?.name || currentProject?.worktree || null;
 
   return {
     text: buildProjectsMenuText(currentProjectName, normalizedPage, totalPages),

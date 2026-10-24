@@ -3,20 +3,25 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { projectListMock, fileListMock, cachedSessionProjectsMock, configMock } = vi.hoisted(() => ({
-  projectListMock: vi.fn(),
-  fileListMock: vi.fn(),
-  cachedSessionProjectsMock: vi.fn(),
-  configMock: {
-    bot: {
-      excludedProjectPaths: [] as string[],
+const { projectListMock, fileListMock, globalSessionsMock, cachedSessionProjectsMock, configMock } =
+  vi.hoisted(() => ({
+    projectListMock: vi.fn(),
+    fileListMock: vi.fn(),
+    globalSessionsMock: vi.fn(),
+    cachedSessionProjectsMock: vi.fn(),
+    configMock: {
+      bot: {
+        excludedProjectPaths: [] as string[],
+      },
     },
-  },
-}));
+  }));
 
 vi.mock("../../../src/opencode/client.js", () => ({
   opencodeServerVersion: "v2",
-  opencodeV2Client: { file: { list: fileListMock } },
+  opencodeV2Client: {
+    file: { list: fileListMock },
+    session: { listGlobalRoots: globalSessionsMock },
+  },
   opencodeClient: {
     project: {
       list: projectListMock,
@@ -26,6 +31,11 @@ vi.mock("../../../src/opencode/client.js", () => ({
 
 vi.mock("../../../src/config.js", () => ({
   config: configMock,
+}));
+
+vi.mock("../../../src/app/services/temporary-sessions-service.js", async (original) => ({
+  ...(await original<typeof import("../../../src/app/services/temporary-sessions-service.js")>()),
+  syncTemporarySessionLinks: async () => undefined,
 }));
 
 vi.mock("../../../src/app/services/session-cache-service.js", () => ({
@@ -46,6 +56,7 @@ describe("project/manager", () => {
     projectListMock.mockReset();
     cachedSessionProjectsMock.mockReset();
     configMock.bot.excludedProjectPaths = [];
+    globalSessionsMock.mockReset().mockResolvedValue({ data: [], error: undefined });
   });
 
   afterEach(async () => {
@@ -76,6 +87,35 @@ describe("project/manager", () => {
       { id: "p1", worktree: "D:/repo-a", name: "Repo A" },
       { id: "p2", worktree: "D:/repo-b", name: "D:/repo-b" },
       { id: "dir_1", worktree: "D:/repo-c", name: "D:/repo-c" },
+    ]);
+  });
+
+  it("groups temporary sessions beyond the cached directories and leaves raw project lookup unchanged", async () => {
+    const base = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+    const directory = path.join(base, "openchamber", "chats", "2026-10-24", "session-abc");
+    projectListMock.mockResolvedValue({ data: [], error: undefined });
+    cachedSessionProjectsMock.mockResolvedValue([
+      { id: "temp", worktree: directory, name: directory },
+    ]);
+    fileListMock.mockResolvedValue({ data: [], error: undefined });
+    globalSessionsMock.mockResolvedValue({
+      data: [
+        {
+          id: "ses_abc",
+          directory,
+          title: "Actual temporary title",
+          time: { created: 1, updated: 2 },
+        },
+      ],
+      error: undefined,
+    });
+    expect(await getListedProjects()).toEqual([
+      expect.objectContaining({ id: "temporary-sessions", name: "Temporary sessions" }),
+    ]);
+    expect(await getProjects()).toEqual([{ id: "temp", worktree: directory, name: directory }]);
+    cachedSessionProjectsMock.mockResolvedValue([]);
+    expect(await getListedProjects()).toEqual([
+      expect.objectContaining({ id: "temporary-sessions" }),
     ]);
   });
 

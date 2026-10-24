@@ -38,7 +38,23 @@ current directory to add it to the project list; no git repository is initialize
 The same folder/path buttons are available in `/open`. Cancel or Back leaves the
 creation flow, and typed paths are never forwarded as AI prompts.
 
-## Updating the fork
+## Temporary sessions
+
+`/projects` groups OpenChamber's `chats/YYYY-MM-DD/session-*` directories under
+**Temporary sessions**. Opening it lists all root temporary sessions by their real
+OpenCode titles, newest first, with pagination. Selecting a session switches to
+its original directory using the existing cross-project session selection flow.
+`/sessions` also opens the grouped list when a temporary session is selected.
+
+The bot creates stable `<sessionID>` directory symlinks under
+`<OPENCODE_TELEGRAM_HOME>/temporary-sessions/`. Originals are never moved; existing
+index entries are never overwritten or deleted. Missing original directories have
+no link created. The index is refreshed when listing projects or temporary sessions,
+not continuously in the background. In container mode only the Telegram grouping
+is available because the bot cannot index host paths. Excluded project directories
+are respected. Other non-git projects are not grouped.
+
+## Updating from the fork
 
 For deployed fork changes, from the clean deployment checkout:
 

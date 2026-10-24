@@ -1,4 +1,5 @@
 export const en = {
+  "projects.temporary": "Temporary sessions",
   "projects.new": "➕ New project",
   "open.new_folder": "📁 New folder",
   "open.enter_path": "✏️ Enter path",

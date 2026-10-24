@@ -8,6 +8,7 @@ const fake = vi.hoisted(() => ({
   client: {
     server: { info: vi.fn() },
     session: {
+      list: vi.fn(),
       get: vi.fn(),
       switchAgent: vi.fn(),
       switchModel: vi.fn(),
@@ -89,6 +90,26 @@ describe("opencode/v2/client", () => {
       baseUrl: "http://127.0.0.1:49374",
       headers: { Authorization: "Basic abc" },
     });
+  });
+
+  it("loads every root-session page and omits order when a cursor is present", async () => {
+    fake.client.session.list
+      .mockResolvedValueOnce({ data: [SESSION], cursor: { next: "page-2" } })
+      .mockResolvedValueOnce({ data: [{ ...SESSION, id: "ses-2" }], cursor: { next: null } });
+    const client = createClient() as unknown as V2ClientExtension;
+    const result = await client.session.listGlobalRoots();
+    expect(result.data?.map((session) => session.id)).toEqual(["ses-1", "ses-2"]);
+    expect(fake.client.session.list.mock.calls).toEqual([
+      [{ limit: 200, parentID: null, order: "desc" }],
+      [{ limit: 200, parentID: null, cursor: "page-2" }],
+    ]);
+  });
+
+  it("fails rather than looping over a repeated session cursor", async () => {
+    fake.client.session.list.mockResolvedValue({ data: [], cursor: { next: "same" } });
+    const result = await (createClient() as unknown as V2ClientExtension).session.listGlobalRoots();
+    expect(result.error).toBeInstanceOf(Error);
+    expect(fake.client.session.list).toHaveBeenCalledTimes(2);
   });
 
   it("reports health with the server version", async () => {

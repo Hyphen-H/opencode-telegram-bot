@@ -6,6 +6,12 @@ import { getCachedSessionProjects } from "./session-cache-service.js";
 import { logger } from "../../utils/logger.js";
 import { findMissingFolders } from "./folder-presence-service.js";
 import type { ProjectInfo } from "../types/project.js";
+import {
+  getTemporaryProject,
+  isTemporarySessionDirectory,
+  loadTemporarySessions,
+  syncTemporarySessionLinks,
+} from "./temporary-sessions-service.js";
 
 interface InternalProject extends ProjectInfo {
   lastUpdated: number;
@@ -141,7 +147,22 @@ export async function getProjects(): Promise<ProjectInfo[]> {
 export async function getListedProjects(): Promise<ProjectInfo[]> {
   const projects = await getProjects();
   const missing = await findMissingFolders(projects.map((project) => project.worktree));
-  return projects.filter((project) => !missing.has(project.worktree));
+  const present = projects.filter((project) => !missing.has(project.worktree));
+  try {
+    const temporary = await loadTemporarySessions();
+    if (temporary.length > 0) {
+      await syncTemporarySessionLinks(temporary).catch((error: unknown) => {
+        logger.warn("[TemporarySessions] Could not synchronize directory links", error);
+      });
+      return [
+        getTemporaryProject(),
+        ...present.filter((project) => !isTemporarySessionDirectory(project.worktree)),
+      ];
+    }
+  } catch (error) {
+    logger.warn("[TemporarySessions] Could not group temporary sessions", error);
+  }
+  return present;
 }
 
 export async function getProjectById(id: string): Promise<ProjectInfo> {
