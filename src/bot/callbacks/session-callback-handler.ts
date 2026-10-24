@@ -326,6 +326,13 @@ export async function handleSessionSelect(ctx: Context, deps: SessionSelectDeps)
         await ctx.editMessageText(text, {
           reply_markup: keyboard,
         });
+        deps.interactionManager.transition({
+          metadata: {
+            ...deps.interactionManager.getSnapshot()?.metadata,
+            sessionIds: pageData.sessions.map((session) => session.id),
+            directories: pageData.sessions.map((session) => session.directory),
+          },
+        });
       } catch (error) {
         logger.error("[Sessions] Error loading sessions page:", error);
         await ctx.answerCallbackQuery({ text: t("sessions.page_load_error_callback") });

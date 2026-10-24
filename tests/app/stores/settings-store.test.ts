@@ -32,6 +32,18 @@ import {
 describe("app/stores/settings-store", () => {
   let tempHome: string;
 
+  it("keeps queued writes in their original app home when the environment changes", async () => {
+    const otherHome = path.join(tempHome, "other-app");
+    const write = setMainMenuCollapsed(true);
+    process.env.OPENCODE_TELEGRAM_HOME = otherHome;
+    await write;
+    process.env.OPENCODE_TELEGRAM_HOME = tempHome;
+    expect(
+      JSON.parse(await readFile(path.join(tempHome, "settings.json"), "utf8")).mainMenuCollapsed,
+    ).toBe(true);
+    await expect(access(path.join(otherHome, "settings.json"))).rejects.toThrow();
+  });
+
   it("persists the collapsed menu preference across reloads", async () => {
     expect(getMainMenuCollapsed()).toBe(false);
     await setMainMenuCollapsed(true);
@@ -53,6 +65,7 @@ describe("app/stores/settings-store", () => {
   });
 
   afterEach(async () => {
+    await flushSettings();
     delete process.env.OPENCODE_TELEGRAM_HOME;
     __resetSettingsForTests();
     await rm(tempHome, { recursive: true, force: true });
@@ -278,10 +291,10 @@ describe("app/stores/settings-store", () => {
     expect(getShowThinkingContent()).toBe(false);
   });
 
-  it("sends diff file attachments by default", async () => {
+  it("does not send intermediate diff file attachments by default", async () => {
     await loadSettings();
 
-    expect(getSendDiffFileAttachments()).toBe(true);
+    expect(getSendDiffFileAttachments()).toBe(false);
   });
 
   it("uses edit response streaming mode by default", async () => {

@@ -18,6 +18,7 @@ import {
 } from "./model-selection-callback-handler.js";
 import { handlePermissionCallback } from "./permission-callback-handler.js";
 import { handleProjectSelect } from "./project-callback-handler.js";
+import { handleSessionAction } from "./session-action-callback-handler.js";
 import { handleTemporarySessionsCallback } from "../menus/temporary-sessions-menu.js";
 import { handlePromptAttachmentCancel } from "./prompt-attachment-callback-handler.js";
 import { handleQuestionCallback } from "./question-callback-handler.js";
@@ -174,6 +175,14 @@ export function registerCallbackRouter(bot: Bot<Context>, deps: CallbackRouterDe
       {
         name: "temporary",
         handlers: [(ctx) => handleTemporarySessionsCallback(ctx, container)],
+        errorScope: "interaction",
+      },
+    ],
+    [
+      "session-action",
+      {
+        name: "session-action",
+        handlers: [(ctx) => handleSessionAction(ctx, container)],
         errorScope: "interaction",
       },
     ],

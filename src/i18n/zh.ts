@@ -1,6 +1,17 @@
 import type { I18nDictionary } from "./en.js";
 
 export const zh: I18nDictionary = {
+  "sessions.action.delete": "🗑 删除",
+  "sessions.action.archive": "📦 归档",
+  "sessions.action.confirm_delete": "确认永久删除",
+  "sessions.action.confirm_archive": "确认归档",
+  "sessions.action.delete_prompt": "删除「{title}」？\n此操作不可撤销，不会删除项目文件。",
+  "sessions.action.archive_prompt": "归档「{title}」？\n会话将从列表隐藏，记录保留，可恢复。",
+  "sessions.action.busy": "会话正在运行，请先停止，再删除或归档。",
+  "sessions.action.v2_only": "归档功能需要 OpenCode V2。",
+  "sessions.action.deleted": "会话已删除",
+  "sessions.action.archived": "会话已归档",
+  "sessions.action.failed": "操作失败，请重试。",
   "projects.temporary": "临时会话",
   "projects.new": "➕ 新建项目",
   "open.new_folder": "📁 新建文件夹",

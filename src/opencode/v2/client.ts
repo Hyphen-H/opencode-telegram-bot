@@ -57,6 +57,7 @@ interface PromptParams {
 export interface V2ClientExtension {
   session: {
     listGlobalRoots: () => Promise<Result<GlobalSession[]>>;
+    archive: (params: { sessionID: string }) => Promise<Result<true>>;
     /** Sends a prompt into the session inbox and returns the id it waits under. */
     promptAsync: (
       params: PromptParams & { directory?: string; delivery: V2InboxDelivery },
@@ -455,6 +456,7 @@ export function createV2OpencodeClient(options: V2ClientOptions): OpencodeClient
           run(async () => {
             const result = await client.session.list({
               order: "desc",
+              archived: false,
               ...(params.limit ? { limit: params.limit } : {}),
               ...(params.roots ? { parentID: null } : {}),
             });
@@ -463,6 +465,11 @@ export function createV2OpencodeClient(options: V2ClientOptions): OpencodeClient
       },
     },
     session: {
+      archive: (params: { sessionID: string }) =>
+        run(async () => {
+          await client.session.update({ sessionID: params.sessionID, archived: true });
+          return true as const;
+        }),
       listGlobalRoots: () =>
         run(async () => {
           const sessions: GlobalSession[] = [];
@@ -470,6 +477,7 @@ export function createV2OpencodeClient(options: V2ClientOptions): OpencodeClient
           do {
             const result = await client.session.list({
               limit: 200,
+              archived: false,
               parentID: null,
               ...(cursor ? { cursor } : { order: "desc" }),
             });
@@ -485,6 +493,7 @@ export function createV2OpencodeClient(options: V2ClientOptions): OpencodeClient
         run(async () => {
           const result = await client.session.list({
             order: "desc",
+            archived: false,
             ...(params.directory ? { directory: params.directory } : {}),
             ...(params.limit ? { limit: params.limit } : {}),
             ...(params.roots ? { parentID: null } : {}),

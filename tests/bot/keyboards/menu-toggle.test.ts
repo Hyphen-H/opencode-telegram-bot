@@ -26,7 +26,7 @@ describe("menu toggle", () => {
     return { ctx, hide, show, menu, keyboard };
   }
 
-  it("silently updates the keyboard and removes carrier and button messages", async () => {
+  it("silently updates the keyboard and retains its latest carrier", async () => {
     const { ctx, hide, keyboard } = setup();
     await hide(ctx);
     expect(setCollapsed).toHaveBeenCalledWith(true);
@@ -34,7 +34,7 @@ describe("menu toggle", () => {
       disable_notification: true,
       reply_markup: keyboard,
     });
-    expect(ctx.api.deleteMessage).toHaveBeenCalledWith(42, 100);
+    expect(ctx.api.deleteMessage).not.toHaveBeenCalled();
     expect(ctx.deleteMessage).toHaveBeenCalledOnce();
   });
 
@@ -43,6 +43,22 @@ describe("menu toggle", () => {
     await show(ctx);
     await menu(ctx);
     expect(setCollapsed.mock.calls).toEqual([[false], [false]]);
+  });
+
+  it("does not delete /menu or its keyboard carrier", async () => {
+    const { ctx, menu } = setup();
+    await menu(ctx);
+    expect(ctx.deleteMessage).not.toHaveBeenCalled();
+    expect(ctx.api.deleteMessage).not.toHaveBeenCalled();
+  });
+
+  it("removes only the old carrier after the next keyboard is accepted", async () => {
+    const { ctx, hide, show } = setup();
+    ctx.reply.mockResolvedValueOnce({ message_id: 100 }).mockResolvedValueOnce({ message_id: 101 });
+    await hide(ctx);
+    await show(ctx);
+    expect(ctx.api.deleteMessage).toHaveBeenCalledExactlyOnceWith(42, 100);
+    expect(ctx.api.deleteMessage).not.toHaveBeenCalledWith(42, 101);
   });
 
   it("does not fall through or send another status reply when cleanup is forbidden", async () => {

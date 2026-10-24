@@ -3,7 +3,7 @@ import path from "node:path";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { setRuntimeMode } from "../../../src/runtime/mode.js";
-import { loadSettings } from "../../../src/app/stores/settings-store.js";
+import { loadSettings, flushSettings } from "../../../src/app/stores/settings-store.js";
 import {
   __resetSessionDirectoryCacheForTests,
   getCachedSessionDirectories,
@@ -85,6 +85,7 @@ describe("session-cache-service", () => {
   });
 
   afterEach(async () => {
+    await flushSettings();
     delete process.env.OPENCODE_TELEGRAM_HOME;
     await rm(tempHome, { recursive: true, force: true });
   });

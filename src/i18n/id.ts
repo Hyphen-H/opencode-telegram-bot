@@ -8,6 +8,17 @@ import type { I18nDictionary } from "./en.js";
  * Keep this dictionary complete to avoid falling back to another locale.
  */
 export const id: I18nDictionary = {
+  "sessions.action.delete": "🗑 Delete",
+  "sessions.action.archive": "📦 Archive",
+  "sessions.action.confirm_delete": "Delete permanently",
+  "sessions.action.confirm_archive": "Archive",
+  "sessions.action.delete_prompt": "Delete “{title}”?\nThis cannot be undone. Project files are not deleted.",
+  "sessions.action.archive_prompt": "Archive “{title}”?\nThe session is hidden from lists. Its history is kept and can be restored.",
+  "sessions.action.busy": "This session is running. Stop it before deleting or archiving it.",
+  "sessions.action.v2_only": "Archiving requires OpenCode V2.",
+  "sessions.action.deleted": "Session deleted",
+  "sessions.action.archived": "Session archived",
+  "sessions.action.failed": "Could not complete the action. Try again.",
   "projects.temporary": "Temporary sessions",
   "projects.new": "➕ New project",
   "open.new_folder": "📁 New folder",

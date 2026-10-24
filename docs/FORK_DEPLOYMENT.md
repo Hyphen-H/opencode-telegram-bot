@@ -2,11 +2,20 @@
 
 This fork keeps the collapsible bottom keyboard in source control. The collapsed
 preference survives restarts in the existing app home's `settings.json`.
-`/menu` restores the full keyboard. Toggling sends no confirmation text: Telegram
-requires a new message to update a reply keyboard, so the bot sends a silent,
-invisible carrier and deletes it and the button input. If Telegram forbids
-deletion, an invisible carrier or the input may remain. This is a reply-keyboard
-workaround; verify keyboard behavior on the Telegram clients you use.
+`/menu` restores the full keyboard and its command input is kept. Toggling sends
+no confirmation text: Telegram requires a new message to update a reply keyboard,
+so the bot keeps its latest silent, invisible carrier. Only a previous carrier
+and button inputs are cleaned up. Deleting the latest carrier retracts the
+keyboard on some Telegram clients. Verify behavior on the clients you use.
+
+Intermediate tool/diff attachments are off by default (`sendDiffFileAttachments`).
+Tool progress stays as text, and final assistant responses are unaffected. The
+setting remains available under `/settings` for explicit opt-in.
+
+Queued settings writes capture their destination app home when scheduled;
+configuration migrations finish their writes before startup continues. Tests flush
+pending writes before removing temporary homes. This prevents a later environment
+change during tests from redirecting queued writes into the deployed bot's settings.
 
 ## Deployment
 
@@ -27,7 +36,18 @@ checkout's CLI using `OPENCODE_TELEGRAM_CLI`. That wrapper remains outside npm's
 installation directory, as does its systemd override. Global npm updates of the
 official package therefore cannot replace the running fork code.
 
-## Creating projects
+## Session deletion and archiving
+
+Ordinary, recent and temporary session lists offer Delete and Archive alongside
+each session. Both show a separate confirmation with the real session title.
+Delete removes the OpenCode session record, not project files. Archive uses the
+V2 server's archive API and excludes archived sessions from these lists; the data
+remains restorable through OpenCode. Running sessions are checked before showing
+confirmation and again before performing the action. Confirmation is tied to the
+active menu and a single-use token, so stale, cancelled or duplicate confirmations
+do not perform an operation. An API failure requires another explicit click.
+
+## Creating a project
 
 Use `/projects` → **New project** to browse the configured `OPEN_BROWSER_ROOTS`
 (the home directory by default). Choose **New folder** to create a child folder,

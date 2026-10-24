@@ -52,12 +52,14 @@ describe("temporary sessions menu", () => {
       expect.objectContaining({
         reply_markup: expect.objectContaining({
           inline_keyboard: expect.arrayContaining([
-            [
+            expect.arrayContaining([
               expect.objectContaining({
                 text: expect.stringContaining("Actual title 0"),
                 callback_data: "recent:0",
               }),
-            ],
+              expect.objectContaining({ callback_data: "session-action:delete:0" }),
+              expect.objectContaining({ callback_data: "session-action:archive:0" }),
+            ]),
             [expect.objectContaining({ callback_data: "temporary:page:1" })],
           ]),
         }),

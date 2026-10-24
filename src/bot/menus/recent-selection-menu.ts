@@ -3,6 +3,7 @@ import { getProjectFolderName } from "./project-selection-menu.js";
 import type { RecentSession, RecentStatus } from "../../app/services/recent-sessions-service.js";
 import { t } from "../../i18n/index.js";
 import { formatSessionTitle } from "../../app/formatters/session-title-formatter.js";
+import { appendSessionActions } from "./session-actions-menu.js";
 
 export const RECENT_CALLBACK_PREFIX = "recent:";
 const GLYPHS: Record<RecentStatus, string> = {
@@ -79,10 +80,15 @@ export function buildRecentMenu(rows: RecentSession[]): { text: string; keyboard
     const trimmed = title.length > available
       ? `${title.slice(0, Math.max(0, available - 1)).join("")}…`
       : displayTitle;
-    keyboard.text(`${prefix}${trimmed}`, `${RECENT_CALLBACK_PREFIX}${index}`).row();
+    keyboard.text(`${prefix}${trimmed}`, `${RECENT_CALLBACK_PREFIX}${index}`);
+    appendSessionActions(keyboard, index).row();
   });
   return {
-    text: [t("recent.heading"), "", `⏳ ${t("recent.running")} · ○ ${t("recent.idle")} · ❓ ${t("recent.question")} · 🔐 ${t("recent.permission")}`].join("\n"),
+    text: [
+      t("recent.heading"),
+      "",
+      `⏳ ${t("recent.running")}\n○ ${t("recent.idle")}\n❓ ${t("recent.question")}\n🔐 ${t("recent.permission")}`,
+    ].join("\n"),
     keyboard,
   };
 }

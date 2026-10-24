@@ -31,11 +31,6 @@ function getSettingsBackupFilePath(): string {
   return `${getSettingsFilePath()}.bak`;
 }
 
-// Lives next to the target file so the rename never crosses a volume boundary.
-function getSettingsTempFilePath(): string {
-  return `${getSettingsFilePath()}.tmp`;
-}
-
 // Set when settings were recovered from the backup: the target file still holds
 // the damaged content, so rotating it into the backup would destroy the only
 // good copy. Cleared by the first successful write.
@@ -87,10 +82,13 @@ async function readSettingsFile(): Promise<Settings> {
   }
 }
 
-async function writeSettingsFileAtomically(settings: Settings): Promise<void> {
+async function writeSettingsFileAtomically(
+  settings: Settings,
+  settingsFilePath: string,
+): Promise<void> {
   const fs = await import("fs/promises");
-  const settingsFilePath = getSettingsFilePath();
-  const tempFilePath = getSettingsTempFilePath();
+  // Keep the temporary file on the same filesystem as its captured destination.
+  const tempFilePath = `${settingsFilePath}.tmp`;
 
   await fs.mkdir(path.dirname(settingsFilePath), { recursive: true });
 
@@ -99,7 +97,7 @@ async function writeSettingsFileAtomically(settings: Settings): Promise<void> {
 
     if (!skipNextBackupRotation) {
       try {
-        await fs.rename(settingsFilePath, getSettingsBackupFilePath());
+        await fs.rename(settingsFilePath, `${settingsFilePath}.bak`);
       } catch (error) {
         // Nothing to back up on the very first write.
         if (!isFileNotFound(error)) {
@@ -121,13 +119,15 @@ async function writeSettingsFileAtomically(settings: Settings): Promise<void> {
 let settingsWriteQueue: Promise<void> = Promise.resolve();
 
 function writeSettingsFile(settings: Settings): Promise<void> {
+  // Do not redirect a queued write if the environment/runtime changes later.
+  const settingsFilePath = getSettingsFilePath();
   settingsWriteQueue = settingsWriteQueue
     .catch(() => {
       // Keep write queue alive after failed writes.
     })
     .then(async () => {
       try {
-        await writeSettingsFileAtomically(settings);
+        await writeSettingsFileAtomically(settings, settingsFilePath);
       } catch (err) {
         logger.error("[SettingsManager] Error writing settings file:", err);
       }
@@ -250,7 +250,7 @@ export function setResponseStreamingMode(mode: ResponseStreamingMode): void {
 }
 
 export function getSendDiffFileAttachments(): boolean {
-  return currentSettings.sendDiffFileAttachments ?? true;
+  return currentSettings.sendDiffFileAttachments ?? false;
 }
 
 export function setSendDiffFileAttachments(enabled: boolean): void {
@@ -480,6 +480,6 @@ export async function loadSettings(): Promise<void> {
   applyInitialSettingsPreset(config.bot.initialSettingsPreset);
 
   if (requiresRewrite) {
-    void writeSettingsFile(currentSettings);
+    await writeSettingsFile(currentSettings);
   }
 }

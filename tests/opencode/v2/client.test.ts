@@ -10,6 +10,7 @@ const fake = vi.hoisted(() => ({
     session: {
       list: vi.fn(),
       get: vi.fn(),
+      update: vi.fn(),
       switchAgent: vi.fn(),
       switchModel: vi.fn(),
       prompt: vi.fn(),
@@ -100,8 +101,8 @@ describe("opencode/v2/client", () => {
     const result = await client.session.listGlobalRoots();
     expect(result.data?.map((session) => session.id)).toEqual(["ses-1", "ses-2"]);
     expect(fake.client.session.list.mock.calls).toEqual([
-      [{ limit: 200, parentID: null, order: "desc" }],
-      [{ limit: 200, parentID: null, cursor: "page-2" }],
+      [{ limit: 200, archived: false, parentID: null, order: "desc" }],
+      [{ limit: 200, archived: false, parentID: null, cursor: "page-2" }],
     ]);
   });
 
@@ -110,6 +111,18 @@ describe("opencode/v2/client", () => {
     const result = await (createClient() as unknown as V2ClientExtension).session.listGlobalRoots();
     expect(result.error).toBeInstanceOf(Error);
     expect(fake.client.session.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("archives through the server API rather than deleting session data", async () => {
+    fake.client.session.update.mockResolvedValue(SESSION);
+    const result = await (createClient() as unknown as V2ClientExtension).session.archive({
+      sessionID: "ses-1",
+    });
+    expect(result).toEqual({ data: true, error: undefined });
+    expect(fake.client.session.update).toHaveBeenCalledExactlyOnceWith({
+      sessionID: "ses-1",
+      archived: true,
+    });
   });
 
   it("reports health with the server version", async () => {

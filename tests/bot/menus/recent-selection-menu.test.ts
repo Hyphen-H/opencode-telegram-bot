@@ -15,7 +15,9 @@ describe("recent session buttons", () => {
       row("z", "/third", "permission"),
       row("i", "/idle", "idle"),
     ]);
-    const buttons = keyboard.inline_keyboard.flat();
+    const buttons = keyboard.inline_keyboard
+      .filter((buttons) => buttons.length > 0)
+      .map((buttons) => buttons[0]!);
     expect(buttons[0]?.text).toContain("⏳ [alpha/shared]");
     expect(buttons[1]?.text).toContain("❓ [beta/shared]");
     expect(buttons[2]?.text).toContain("🔐 [third]");
@@ -31,7 +33,9 @@ describe("recent session buttons", () => {
       row("a", "/work/very-long-common-prefix-northern-folder/shared-repository-with-a-long-name", "idle"),
       row("b", "/work/very-long-common-prefix-southern-folder/shared-repository-with-a-long-name", "idle"),
     ]);
-    const labels = keyboard.inline_keyboard.flat().map((button) => button.text);
+    const labels = keyboard.inline_keyboard
+      .filter((buttons) => buttons.length > 0)
+      .map((buttons) => buttons[0]!.text);
     expect(labels[0]).toContain("northern");
     expect(labels[1]).toContain("southern");
     expect(labels.every((label) => [...label].length <= 64)).toBe(true);
@@ -44,7 +48,9 @@ describe("recent session buttons", () => {
       row("a", `${prefix}NORTH${suffix}`, "idle"),
       row("b", `${prefix}SOUTH${suffix}`, "idle"),
     ]);
-    const labels = keyboard.inline_keyboard.flat().map((button) => button.text);
+    const labels = keyboard.inline_keyboard
+      .filter((buttons) => buttons.length > 0)
+      .map((buttons) => buttons[0]!.text);
     expect(labels[0]).toContain("NORTH");
     expect(labels[1]).toContain("SOUTH");
     expect(labels.every((label) => [...label].length <= 64)).toBe(true);
@@ -58,7 +64,9 @@ describe("recent session buttons", () => {
       row("b", `${base}SOUTH${"b".repeat(20)}WEST${"b".repeat(20)}/shared`, "idle"),
       row("c", `${base}SOUTH${"b".repeat(20)}EAST${"b".repeat(20)}/shared`, "idle"),
     ]);
-    const labels = keyboard.inline_keyboard.flat().map((button) => button.text);
+    const labels = keyboard.inline_keyboard
+      .filter((buttons) => buttons.length > 0)
+      .map((buttons) => buttons[0]!.text);
     expect(new Set(labels).size).toBe(3);
     expect(labels.every((label) => [...label].length <= 64)).toBe(true);
   });

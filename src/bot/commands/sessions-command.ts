@@ -55,11 +55,19 @@ export async function sessionsCommand(
 
     const { text, keyboard } = buildSessionSelectionMenuView(firstPage, pageSize);
 
-    await replyWithInlineMenu(ctx, {
-      menuKind: "session",
-      text,
-      keyboard,
-    }, deps);
+    await replyWithInlineMenu(
+      ctx,
+      {
+        menuKind: "session",
+        text,
+        keyboard,
+        metadata: {
+          sessionIds: firstPage.sessions.map((session) => session.id),
+          directories: firstPage.sessions.map((session) => session.directory),
+        },
+      },
+      deps,
+    );
   } catch (error) {
     logger.error("[Sessions] Error fetching sessions:", error);
     await ctx.reply(t("sessions.fetch_error"));
