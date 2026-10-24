@@ -23,7 +23,11 @@ export async function recentCommand(ctx: CommandContext<Context>, deps: Pick<App
     const { text, keyboard } = buildRecentMenu(rows);
     await replyWithInlineMenu(ctx, {
       menuKind: "recent", text, keyboard,
-      metadata: { sessionIds: rows.map(({ session }) => session.id), directories: rows.map(({ session }) => session.directory) },
+      metadata: {
+        sessionIds: rows.map(({ session }) => session.id),
+        directories: rows.map(({ session }) => session.directory),
+        sessionTitles: rows.map(({ session }) => session.title),
+      },
     }, deps);
   } catch (error) {
     logger.error("[Recent] Failed to load sessions:", error);

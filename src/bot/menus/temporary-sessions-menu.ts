@@ -8,8 +8,6 @@ import {
 import { config } from "../../config.js";
 import { t } from "../../i18n/index.js";
 import { logger } from "../../utils/logger.js";
-import { isForegroundBusy } from "../../app/services/run-control-service.js";
-import { replyBusyBlocked } from "../messages/busy-blocked-renderer.js";
 import {
   appendInlineMenuCancelButton,
   ensureActiveInlineMenu,
@@ -65,6 +63,7 @@ export async function showTemporarySessions(
     temporarySessions: true,
     sessionIds: current.map((session) => session.id),
     directories: current.map((session) => session.directory),
+    sessionTitles: current.map((session) => session.title),
   };
   if (edit) {
     await ctx.answerCallbackQuery();
@@ -95,10 +94,6 @@ export async function handleTemporarySessionsCallback(
     ? data.slice(TEMPORARY_PAGE_PREFIX.length)
     : null;
   if (!isProject && pageText === null) return false;
-  if (isForegroundBusy(deps)) {
-    await replyBusyBlocked(ctx);
-    return true;
-  }
   if (!(await ensureActiveInlineMenu(ctx, isProject ? "project" : "recent", deps))) return true;
   const metadata = deps.interactionManager.getSnapshot()?.metadata;
   if (!isProject && (!metadata?.temporarySessions || !/^\d+$/.test(pageText!))) {

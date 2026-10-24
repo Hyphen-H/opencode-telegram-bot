@@ -1,7 +1,7 @@
 export const en = {
   "sessions.action.delete": "🗑️",
   "sessions.action.archive": "📦",
-  "sessions.action.more": "⋯",
+  "sessions.action.manage": "⋯ Manage sessions",
   "sessions.action.back": "‹",
   "sessions.action.confirm_delete": "Delete permanently",
   "sessions.action.confirm_archive": "Archive",
@@ -221,6 +221,8 @@ export const en = {
   "projects.selected":
     "✅ Project selected: {project}\n\n📋 Session was reset. Use /sessions or /new for this project.",
   "projects.select_error": "🔴 Failed to select project.",
+  "projects.previous_run_continues":
+    "⏳ The previous task keeps running in the background. Reopen its session with /recent to see the result.",
 
   "sessions.project_not_selected":
     "🏗 Project is not selected.\n\nFirst select a project with /projects.",

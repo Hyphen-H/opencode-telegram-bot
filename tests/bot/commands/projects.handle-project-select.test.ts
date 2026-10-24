@@ -9,10 +9,15 @@ const mocked = vi.hoisted(() => ({
   getProjectsMock: vi.fn(),
   ensureActiveInlineMenuMock: vi.fn(),
   clearAllInteractionStateMock: vi.fn(),
+  switchToProjectMock: vi.fn(),
 }));
 
 vi.mock("../../../src/app/services/project-service.js", () => ({
   getProjects: mocked.getProjectsMock,
+}));
+
+vi.mock("../../../src/app/services/project-switch-service.js", () => ({
+  switchToProject: mocked.switchToProjectMock,
 }));
 
 vi.mock("../../../src/bot/menus/inline-menu.js", () => ({
@@ -26,6 +31,7 @@ function createCallbackContext(data: string): Context {
     callbackQuery: { data } as Context["callbackQuery"],
     answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
     editMessageText: vi.fn().mockResolvedValue(undefined),
+    deleteMessage: vi.fn().mockResolvedValue(undefined),
     reply: vi.fn().mockResolvedValue(undefined),
   } as unknown as Context;
 }
@@ -48,6 +54,7 @@ describe("bot/commands/projects handleProjectSelect", () => {
     mocked.getProjectsMock.mockReset();
     mocked.ensureActiveInlineMenuMock.mockReset();
     mocked.clearAllInteractionStateMock.mockReset();
+    mocked.switchToProjectMock.mockReset();
     mocked.ensureActiveInlineMenuMock.mockResolvedValue(true);
   });
 
@@ -84,17 +91,23 @@ describe("bot/commands/projects handleProjectSelect", () => {
     expect(ctx.reply).not.toHaveBeenCalled();
   });
 
-  it("blocks project selection callback while foreground session is busy", async () => {
+  it("switches projects while a foreground session is busy", async () => {
     container.foregroundSessionState.markBusy("session-1", "D:\\Projects\\Repo");
+    mocked.getProjectsMock.mockResolvedValue([
+      { id: "abc", name: "Other", worktree: "/repo-other" },
+    ]);
+    mocked.switchToProjectMock.mockResolvedValue({
+      keyboard: { inline_keyboard: [] },
+      releasedRun: true,
+    });
 
     const ctx = createCallbackContext("project:abc");
     const handled = await handleProjectSelect(ctx, createDeps());
 
     expect(handled).toBe(true);
-    expect(mocked.getProjectsMock).not.toHaveBeenCalled();
-    expect(ctx.answerCallbackQuery).toHaveBeenCalledWith({
-      text: t("bot.session_busy"),
-    });
+    expect(mocked.switchToProjectMock).toHaveBeenCalled();
+    expect(ctx.answerCallbackQuery).not.toHaveBeenCalledWith({ text: t("bot.session_busy") });
+    expect(ctx.reply).toHaveBeenCalledWith(t("projects.previous_run_continues"));
   });
 
   it("does not block permission callbacks while foreground session is busy", async () => {

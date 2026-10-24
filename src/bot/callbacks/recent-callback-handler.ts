@@ -13,8 +13,15 @@ import { createProjectSwitchPresentation } from "../services/project-switch-pres
 import { selectSessionById, type SessionSelectDeps } from "./session-callback-handler.js";
 import { failure } from "./feedback.js";
 
-type RecentSelectDeps = SessionSelectDeps & Pick<AppContainer,
-  "backgroundSessionTracker" | "pinnedMessageManager" | "resetAggregator">;
+type RecentSelectDeps = SessionSelectDeps &
+  Pick<
+    AppContainer,
+    | "assistantRunState"
+    | "backgroundSessionTracker"
+    | "foregroundSessionState"
+    | "pinnedMessageManager"
+    | "resetAggregator"
+  >;
 
 export async function handleRecentSelect(ctx: Context, deps: RecentSelectDeps): Promise<boolean> {
   const data = ctx.callbackQuery?.data;

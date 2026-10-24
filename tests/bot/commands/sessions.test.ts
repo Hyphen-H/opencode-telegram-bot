@@ -274,7 +274,8 @@ describe("bot/commands/sessions", () => {
     expect(keyboardRows[0]?.[0]?.callback_data).toBe("session:session-1");
     expect(keyboardRows[9]?.[0]?.callback_data).toBe("session:session-10");
     expect(keyboardRows[10]?.[0]?.callback_data).toBe("session:page:1");
-    expect(keyboardRows[11]?.[0]?.callback_data).toBe("inline:cancel:session");
+    expect(keyboardRows[11]?.[0]?.callback_data).toBe("session-actions:menu");
+    expect(keyboardRows[12]?.[0]?.callback_data).toBe("inline:cancel:session");
   });
 
   it("leaves out sessions whose folder is gone without letting them take places on the page", async () => {
@@ -393,7 +394,8 @@ describe("bot/commands/sessions", () => {
     expect(inlineRows[0]?.[0]?.callback_data).toBe("session:session-11");
     expect(inlineRows[1]?.[0]?.callback_data).toBe("session:session-12");
     expect(inlineRows[2]?.[0]?.callback_data).toBe("session:page:0");
-    expect(inlineRows[3]?.[0]?.callback_data).toBe("inline:cancel:session");
+    expect(inlineRows[3]?.[0]?.callback_data).toBe("session-actions:menu");
+    expect(inlineRows[4]?.[0]?.callback_data).toBe("inline:cancel:session");
   });
 
   it("returns page-empty callback message when requested page has no sessions", async () => {
@@ -665,8 +667,8 @@ describe("bot/commands/sessions", () => {
     const ctx = createCallbackContext("session:session-1", 456);
     await handleSessionSelect(ctx, createDeps());
 
-    const sent = (ctx.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls.map((call) =>
-      String(call[1]),
+    const sent = (ctx.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls.map(
+      (call) => String(call[1]),
     );
     expect(sent.some((text) => text.includes("partial reply"))).toBe(false);
     expect(sent.some((text) => text.includes("the prompt"))).toBe(true);
@@ -702,8 +704,8 @@ describe("bot/commands/sessions", () => {
     const ctx = createCallbackContext("session:session-1", 456);
     await handleSessionSelect(ctx, createDeps());
 
-    const sent = (ctx.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls.map((call) =>
-      String(call[1]),
+    const sent = (ctx.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls.map(
+      (call) => String(call[1]),
     );
     expect(sent.some((text) => text.includes("only a prompt"))).toBe(true);
     expect(sent).not.toContain(t("sessions.preview.empty"));

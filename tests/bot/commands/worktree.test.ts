@@ -16,7 +16,10 @@ const mocked = vi.hoisted(() => ({
   replyBusyBlockedMock: vi.fn().mockResolvedValue(undefined),
   upsertSessionDirectoryMock: vi.fn().mockResolvedValue(undefined),
   getProjectByWorktreeMock: vi.fn(),
-  switchToProjectMock: vi.fn().mockResolvedValue({ inline_keyboard: [] }),
+  switchToProjectMock: vi.fn().mockResolvedValue({
+    keyboard: { inline_keyboard: [] },
+    releasedRun: false,
+  }),
   clearAllInteractionStateMock: vi.fn(),
 }));
 
@@ -115,7 +118,10 @@ describe("bot/commands/worktree", () => {
       worktree: "/repo-feature",
       name: "/repo-feature",
     });
-    mocked.switchToProjectMock.mockReset().mockResolvedValue({ inline_keyboard: [] });
+    mocked.switchToProjectMock.mockReset().mockResolvedValue({
+      keyboard: { inline_keyboard: [] },
+      releasedRun: false,
+    });
     mocked.clearAllInteractionStateMock.mockReset();
   });
 

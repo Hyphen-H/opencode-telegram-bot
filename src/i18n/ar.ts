@@ -10,7 +10,7 @@ import type { I18nDictionary } from "./en.js";
 export const ar: I18nDictionary = {
   "sessions.action.delete": "🗑️",
   "sessions.action.archive": "📦",
-  "sessions.action.more": "⋯",
+  "sessions.action.manage": "⋯ Manage sessions",
   "sessions.action.back": "‹",
   "sessions.action.confirm_delete": "Delete permanently",
   "sessions.action.confirm_archive": "Archive",
@@ -222,6 +222,8 @@ export const ar: I18nDictionary = {
   "projects.selected":
     "✅ تم اختيار المشروع: {project}\n\n📋 تمت إعادة ضبط الجلسة الحالية. استخدم /sessions لاختيار جلسة أو /new لبدء جلسة جديدة.",
   "projects.select_error": "🔴 تعذر اختيار المشروع.",
+  "projects.previous_run_continues":
+    "⏳ تستمر المهمة السابقة في العمل بالخلفية. أعد فتح جلستها عبر /recent لرؤية النتيجة.",
 
   "sessions.project_not_selected":
     "🏗 لم تحدد مشروعًا بعد.\n\nاختر مشروعًا أولًا باستخدام /projects.",

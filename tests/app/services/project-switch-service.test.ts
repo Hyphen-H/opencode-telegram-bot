@@ -15,15 +15,16 @@ const mocked = vi.hoisted(() => ({
   keyboardUpdateAgentMock: vi.fn(),
   getStoredAgentMock: vi.fn(() => "code"),
   resolveProjectAgentMock: vi.fn(async (agent: string) => agent),
-  getStoredModelMock: vi.fn(
-    (): ModelInfo => ({
-      providerID: "anthropic",
-      modelID: "claude-4",
-      variant: "default",
-    }),
-  ),
+  getStoredModelMock: vi.fn((): ModelInfo => ({
+    providerID: "anthropic",
+    modelID: "claude-4",
+    variant: "default",
+  })),
   formatVariantMock: vi.fn(() => "Default"),
   createMainKeyboardMock: vi.fn(() => ({ keyboard: [[{ text: "mock" }]] })),
+  getCurrentSessionMock: vi.fn(),
+  handOverPromptQueueMock: vi.fn().mockResolvedValue(undefined),
+  clearPromptResponseModeMock: vi.fn(),
 }));
 
 vi.mock("../../../src/app/stores/settings-store.js", () => ({
@@ -31,6 +32,13 @@ vi.mock("../../../src/app/stores/settings-store.js", () => ({
 }));
 vi.mock("../../../src/app/services/session-service.js", () => ({
   clearSession: mocked.clearSessionMock,
+  getCurrentSession: mocked.getCurrentSessionMock,
+}));
+vi.mock("../../../src/bot/handlers/prompt.js", () => ({
+  clearPromptResponseMode: mocked.clearPromptResponseModeMock,
+}));
+vi.mock("../../../src/bot/handlers/prompt-handover.js", () => ({
+  handOverPromptQueue: mocked.handOverPromptQueueMock,
 }));
 vi.mock("../../../src/app/services/agent-selection-service.js", () => ({
   getStoredAgent: mocked.getStoredAgentMock,
@@ -99,6 +107,9 @@ describe("app/services/project-switch-service", () => {
     });
     mocked.formatVariantMock.mockReset().mockReturnValue("Default");
     mocked.createMainKeyboardMock.mockReset().mockReturnValue({ keyboard: [[{ text: "mock" }]] });
+    mocked.getCurrentSessionMock.mockReset();
+    mocked.handOverPromptQueueMock.mockReset().mockResolvedValue(undefined);
+    mocked.clearPromptResponseModeMock.mockReset();
   });
 
   it("should call state-clearing functions with correct arguments", async () => {
@@ -141,7 +152,10 @@ describe("app/services/project-switch-service", () => {
     const result = await switchTestProject(ctx);
 
     expect(mocked.createMainKeyboardMock).toHaveBeenCalled();
-    expect(result).toEqual({ keyboard: [[{ text: "mock" }]] });
+    expect(result).toEqual({
+      keyboard: { keyboard: [[{ text: "mock" }]] },
+      releasedRun: false,
+    });
   });
 
   it("should pass model variant to formatVariantForButton", async () => {
@@ -163,6 +177,28 @@ describe("app/services/project-switch-service", () => {
     expect(mocked.formatVariantMock).toHaveBeenCalledWith("default");
   });
 
+  it("releases a running turn so the new project is not held busy", async () => {
+    mocked.getCurrentSessionMock.mockReturnValue({ id: "ses_a", directory: "/old" });
+    deps.foregroundSessionState.markBusy("ses_a", "/old");
+    deps.assistantRunState.startRun("ses_a", {
+      startedAt: Date.now(),
+      configuredAgent: "code",
+      configuredProviderID: "anthropic",
+      configuredModelID: "claude-4",
+    });
+
+    const result = await switchTestProject(createCtx());
+
+    expect(result.releasedRun).toBe(true);
+    expect(mocked.handOverPromptQueueMock).toHaveBeenCalledWith({
+      id: "ses_a",
+      directory: "/old",
+    });
+    expect(mocked.clearPromptResponseModeMock).toHaveBeenCalledWith("ses_a");
+    expect(deps.foregroundSessionState.isBusy()).toBe(false);
+    expect(deps.assistantRunState.hasRun("ses_a")).toBe(false);
+  });
+
   it("should not throw if pinnedMessageManager.clear rejects", async () => {
     mocked.pinnedClearMock.mockRejectedValue(new Error("unpin failed"));
     const ctx = createCtx();
@@ -170,6 +206,9 @@ describe("app/services/project-switch-service", () => {
     const result = await switchTestProject(ctx);
 
     expect(mocked.createMainKeyboardMock).toHaveBeenCalled();
-    expect(result).toEqual({ keyboard: [[{ text: "mock" }]] });
+    expect(result).toEqual({
+      keyboard: { keyboard: [[{ text: "mock" }]] },
+      releasedRun: false,
+    });
   });
 });

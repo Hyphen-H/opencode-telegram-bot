@@ -1,10 +1,7 @@
 import type { Context } from "grammy";
 import type { AppContainer } from "../../app/bootstrap/app-container.js";
 import { getListedProjects, getProjects } from "../../app/services/project-service.js";
-import {
-  isForegroundBusy,
-  type ForegroundBusyDeps,
-} from "../../app/services/run-control-service.js";
+import type { ForegroundBusyDeps } from "../../app/services/run-control-service.js";
 import {
   switchToProject,
   type ProjectSwitchDeps,
@@ -19,7 +16,6 @@ import {
   type InlineMenuDeps,
 } from "../menus/inline-menu.js";
 import { buildProjectsMenuView, parseProjectPageCallback } from "../menus/project-selection-menu.js";
-import { replyBusyBlocked } from "../messages/busy-blocked-renderer.js";
 import {
   createProjectSwitchPresentation,
   type ProjectSwitchPresentationDeps,
@@ -43,11 +39,6 @@ export async function handleProjectSelect(ctx: Context, deps: ProjectSelectDeps)
 
   if (page === null && !isProjectSelection && !isNewProject) {
     return false;
-  }
-
-  if (isForegroundBusy(deps)) {
-    await replyBusyBlocked(ctx);
-    return true;
   }
 
   if (isNewProject) {
@@ -103,15 +94,23 @@ export async function handleProjectSelect(ctx: Context, deps: ProjectSelectDeps)
 
     logger.info(`[Bot] Project selected: ${projectName} (id: ${projectId})`);
 
-    const keyboard = await switchToProject(ctx, selectedProject, "project_switched", {
-      ...deps,
-      presentation: createProjectSwitchPresentation(deps),
-    });
+    const { keyboard, releasedRun } = await switchToProject(
+      ctx,
+      selectedProject,
+      "project_switched",
+      {
+        ...deps,
+        presentation: createProjectSwitchPresentation(deps),
+      },
+    );
 
     await ctx.answerCallbackQuery();
     await ctx.reply(t("projects.selected", { project: projectName }), {
       reply_markup: keyboard,
     });
+    if (releasedRun) {
+      await ctx.reply(t("projects.previous_run_continues"));
+    }
 
     await ctx.deleteMessage();
   } catch (error) {

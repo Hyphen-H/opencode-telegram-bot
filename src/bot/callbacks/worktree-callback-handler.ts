@@ -124,10 +124,15 @@ export async function handleWorktreeCallback(
     await upsertSessionDirectory(selectedWorktree.path, Date.now());
     const projectInfo = await getProjectByWorktree(selectedWorktree.path);
     const selectedProjectInfo = { ...projectInfo, name: selectedWorktree.path };
-    const replyKeyboard = await switchToProject(ctx, selectedProjectInfo, "worktree_switched", {
-      ...deps,
-      presentation: createProjectSwitchPresentation(deps),
-    });
+    const { keyboard: replyKeyboard } = await switchToProject(
+      ctx,
+      selectedProjectInfo,
+      "worktree_switched",
+      {
+        ...deps,
+        presentation: createProjectSwitchPresentation(deps),
+      },
+    );
 
     await ctx.answerCallbackQuery();
     await ctx.reply(t("worktree.selected", { worktree: selectedWorktree.path }), {

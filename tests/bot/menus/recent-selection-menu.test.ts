@@ -25,7 +25,7 @@ describe("recent session buttons", () => {
       .map((buttons) => buttons[0]!);
     for (const row of keyboard.inline_keyboard.filter((row) => row.length > 0)) {
       if ("callback_data" in row[0]! && row[0]!.callback_data.startsWith("recent:")) {
-        expect(row.slice(1).map((button) => button.text)).toEqual(["⋯"]);
+        expect(row.slice(1).map((button) => button.text)).toEqual([]);
       }
     }
     expect(buttons[0]?.text).toContain("⏳ [alpha/shared]");
@@ -38,6 +38,7 @@ describe("recent session buttons", () => {
     ).toEqual(["recent:0", "recent:1", "recent:2", "recent:3"]);
     expect(text).toContain("⏳");
     expect(text).toContain("🔐");
+    expect(keyboard.inline_keyboard.at(-1)?.[0]?.text).toBe(t("sessions.action.manage"));
   });
 
   it("keeps the differing parent segment visible when project paths are long", () => {
@@ -55,6 +56,10 @@ describe("recent session buttons", () => {
     ]);
     const labels = keyboard.inline_keyboard
       .filter((buttons) => buttons.length > 0)
+      .filter(
+        (buttons) =>
+          "callback_data" in buttons[0]! && buttons[0]!.callback_data.startsWith("recent:"),
+      )
       .map((buttons) => buttons[0]!.text);
     expect(labels[0]).toContain("northern");
     expect(labels[1]).toContain("southern");
@@ -70,6 +75,10 @@ describe("recent session buttons", () => {
     ]);
     const labels = keyboard.inline_keyboard
       .filter((buttons) => buttons.length > 0)
+      .filter(
+        (buttons) =>
+          "callback_data" in buttons[0]! && buttons[0]!.callback_data.startsWith("recent:"),
+      )
       .map((buttons) => buttons[0]!.text);
     expect(labels[0]).toContain("NORTH");
     expect(labels[1]).toContain("SOUTH");
@@ -86,6 +95,10 @@ describe("recent session buttons", () => {
     ]);
     const labels = keyboard.inline_keyboard
       .filter((buttons) => buttons.length > 0)
+      .filter(
+        (buttons) =>
+          "callback_data" in buttons[0]! && buttons[0]!.callback_data.startsWith("recent:"),
+      )
       .map((buttons) => buttons[0]!.text);
     expect(new Set(labels).size).toBe(3);
     expect(labels.every((label) => [...label].length <= 64)).toBe(true);

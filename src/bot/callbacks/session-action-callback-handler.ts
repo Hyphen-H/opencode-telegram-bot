@@ -11,9 +11,11 @@ import { isForegroundBusy } from "../../app/services/run-control-service.js";
 import { formatSessionTitle } from "../../app/formatters/session-title-formatter.js";
 import { ensureActiveInlineMenu } from "../menus/inline-menu.js";
 import {
+  buildSessionActionsList,
   buildSessionActionsSubmenu,
   SESSION_ACTION_PREFIX,
   SESSION_ACTIONS_MENU_PREFIX,
+  type SessionActionListItem,
 } from "../menus/session-actions-menu.js";
 import { replyBusyBlocked } from "../messages/busy-blocked-renderer.js";
 import { t } from "../../i18n/index.js";
@@ -27,6 +29,15 @@ type ActionDeps = Pick<
   | "resetAggregator"
   | "pinnedMessageManager"
 >;
+/** The sessions the menu can still act on, keyed by their position in the list. */
+function listItems(metadata: InteractionMetadata): SessionActionListItem[] {
+  const ids = Array.isArray(metadata.sessionIds) ? metadata.sessionIds : [];
+  const titles = Array.isArray(metadata.sessionTitles) ? metadata.sessionTitles : [];
+  return ids.flatMap((id, index) =>
+    typeof id === "string" ? [{ title: String(titles[index] ?? ""), index }] : [],
+  );
+}
+
 type PendingAction = {
   action: "delete" | "archive";
   id: string;
@@ -75,7 +86,20 @@ export async function handleSessionAction(ctx: Context, deps: ActionDeps): Promi
     ctx.answerCallbackQuery({ text: t("inline.inactive_callback"), show_alert: true });
   let pending = state!.metadata.sessionAction as PendingAction | undefined;
   try {
-    const submenu = data.match(/^session-actions:(\d+)$/);
+    if (data === `${SESSION_ACTIONS_MENU_PREFIX}menu`) {
+      const list = buildSessionActionsList(listItems(state!.metadata));
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageReplyMarkup({ reply_markup: list });
+      deps.interactionManager.transition({
+        metadata: {
+          ...state!.metadata,
+          sessionListKeyboard: ctx.callbackQuery?.message?.reply_markup,
+          sessionActionsListKeyboard: list,
+        },
+      });
+      return true;
+    }
+    const submenu = data.match(/^session-actions:(?:select:)?(\d+)$/);
     if (submenu) {
       const index = Number(submenu[1]);
       const ids = state!.metadata.sessionIds;
@@ -84,24 +108,38 @@ export async function handleSessionAction(ctx: Context, deps: ActionDeps): Promi
         return true;
       }
       await ctx.answerCallbackQuery();
-      const message = ctx.callbackQuery?.message;
-      if (message?.reply_markup) {
-        deps.interactionManager.transition({
-          metadata: {
-            ...state!.metadata,
-            sessionListKeyboard: message.reply_markup,
-            sessionActionMenuIndex: index,
-          },
-        });
-      }
+      deps.interactionManager.transition({
+        metadata: {
+          ...state!.metadata,
+          sessionActionMenuIndex: index,
+          sessionActionsListKeyboard:
+            ctx.callbackQuery?.message?.reply_markup ??
+            buildSessionActionsList(listItems(state!.metadata)),
+        },
+      });
       await ctx.editMessageReplyMarkup({ reply_markup: buildSessionActionsSubmenu(index) });
       return true;
     }
-    if (data === `${SESSION_ACTIONS_MENU_PREFIX}back`) {
+    if (data === `${SESSION_ACTIONS_MENU_PREFIX}submenu-back`) {
       await ctx.answerCallbackQuery();
       await ctx.editMessageReplyMarkup({
-        reply_markup: state!.metadata.sessionListKeyboard as InlineKeyboardMarkup,
+        reply_markup:
+          (state!.metadata.sessionActionsListKeyboard as InlineKeyboardMarkup | undefined) ??
+          buildSessionActionsList(listItems(state!.metadata)),
       });
+      deps.interactionManager.transition({
+        metadata: { ...state!.metadata, sessionActionMenuIndex: undefined },
+      });
+      return true;
+    }
+    if (data === `${SESSION_ACTIONS_MENU_PREFIX}back`) {
+      const list = state!.metadata.sessionListKeyboard as InlineKeyboardMarkup | undefined;
+      await ctx.answerCallbackQuery();
+      if (!list) {
+        await inactive();
+        return true;
+      }
+      await ctx.editMessageReplyMarkup({ reply_markup: list });
       deps.interactionManager.transition({
         metadata: { ...state!.metadata, sessionActionMenuIndex: undefined },
       });
@@ -200,16 +238,10 @@ export async function handleSessionAction(ctx: Context, deps: ActionDeps): Promi
     const metadata = { ...pending.metadata };
     const ids = metadata.sessionIds;
     if (Array.isArray(ids)) metadata.sessionIds = ids.map((id) => (id === pending!.id ? null : id));
-    const keyboard = {
-      inline_keyboard: pending.keyboard.inline_keyboard.filter(
-        (row) =>
-          !row.some(
-            (button) =>
-              "callback_data" in button &&
-              button.callback_data === `${SESSION_ACTIONS_MENU_PREFIX}${pending!.index}`,
-          ),
-      ),
-    };
+    // The list it returns to no longer offers the session the action just removed.
+    const list = buildSessionActionsList(listItems(metadata));
+    metadata.sessionActionsListKeyboard = list;
+    metadata.sessionActionMenuIndex = undefined;
     // Consume the nonce even if cleanup or rendering later fails.
     deps.interactionManager.transition({ metadata });
     if (getCurrentSession()?.id === pending.id) {
@@ -220,7 +252,7 @@ export async function handleSessionAction(ctx: Context, deps: ActionDeps): Promi
         .clear()
         .catch((error: unknown) => logger.warn("[SessionAction] Could not clear dashboard", error));
     }
-    await ctx.editMessageText(pending.text, { reply_markup: keyboard }).catch((error: unknown) => {
+    await ctx.editMessageText(pending.text, { reply_markup: list }).catch((error: unknown) => {
       logger.warn("[SessionAction] Action succeeded but list refresh failed", error);
     });
     await ctx.answerCallbackQuery({

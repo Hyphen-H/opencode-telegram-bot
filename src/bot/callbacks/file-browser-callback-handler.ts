@@ -318,10 +318,15 @@ async function selectDirectory(
 
     const projectInfo = await getProjectByWorktree(directory);
     const selectedProjectInfo = { ...projectInfo, name: displayPath };
-    const replyKeyboard = await switchToProject(ctx, selectedProjectInfo, "open_project_selected", {
-      ...deps,
-      presentation: createProjectSwitchPresentation(deps),
-    });
+    const { keyboard: replyKeyboard } = await switchToProject(
+      ctx,
+      selectedProjectInfo,
+      "open_project_selected",
+      {
+        ...deps,
+        presentation: createProjectSwitchPresentation(deps),
+      },
+    );
 
     await ctx.answerCallbackQuery();
     await ctx.reply(t("open.selected", { project: displayPath }), { reply_markup: replyKeyboard });

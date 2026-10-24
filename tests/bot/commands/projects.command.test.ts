@@ -95,16 +95,18 @@ describe("bot/commands/projects command", () => {
     mocked.replyWithInlineMenuMock.mockReset();
   });
 
-  it("blocks projects command while foreground session is busy", async () => {
+  it("opens the projects menu while a foreground session is busy", async () => {
     container.foregroundSessionState.markBusy("session-1", "D:\\Projects\\Repo");
+    mocked.getProjectsMock.mockResolvedValue([
+      { id: "project-1", worktree: "D:\\Projects\\Repo", name: "Repo" },
+    ]);
 
     const ctx = createContext();
     await projectsCommand(ctx as never, container);
 
-    expect(mocked.syncSessionDirectoryCacheMock).not.toHaveBeenCalled();
-    expect(mocked.getProjectsMock).not.toHaveBeenCalled();
-    expect(mocked.replyWithInlineMenuMock).not.toHaveBeenCalled();
-    expect(ctx.reply).toHaveBeenCalledWith(t("bot.session_busy"));
+    expect(mocked.getProjectsMock).toHaveBeenCalled();
+    expect(mocked.replyWithInlineMenuMock).toHaveBeenCalled();
+    expect(ctx.reply).not.toHaveBeenCalledWith(t("bot.session_busy"));
   });
 
   it("marks the main project as active when the current selection is a linked worktree", async () => {

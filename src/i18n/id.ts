@@ -10,7 +10,7 @@ import type { I18nDictionary } from "./en.js";
 export const id: I18nDictionary = {
   "sessions.action.delete": "🗑️",
   "sessions.action.archive": "📦",
-  "sessions.action.more": "⋯",
+  "sessions.action.manage": "⋯ Manage sessions",
   "sessions.action.back": "‹",
   "sessions.action.confirm_delete": "Delete permanently",
   "sessions.action.confirm_archive": "Archive",
@@ -229,6 +229,8 @@ export const id: I18nDictionary = {
   "projects.selected":
     "✅ Proyek dipilih: {project}\n\n📋 Sesi direset. Gunakan /sessions atau /new untuk proyek ini.",
   "projects.select_error": "🔴 Gagal memilih proyek.",
+  "projects.previous_run_continues":
+    "⏳ Tugas sebelumnya tetap berjalan di latar belakang. Buka kembali sesinya dengan /recent untuk melihat hasilnya.",
 
   "sessions.project_not_selected": "🏗 Proyek belum dipilih.\n\nPilih dulu proyek dengan /projects.",
   "sessions.empty": "📭 Tidak ada sesi.\n\nBuat sesi baru dengan /new.",

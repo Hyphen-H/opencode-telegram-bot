@@ -3,7 +3,7 @@ import type { I18nDictionary } from "./en.js";
 export const zh: I18nDictionary = {
   "sessions.action.delete": "🗑️",
   "sessions.action.archive": "📦",
-  "sessions.action.more": "⋯",
+  "sessions.action.manage": "⋯ 管理会话",
   "sessions.action.back": "‹",
   "sessions.action.confirm_delete": "确认永久删除",
   "sessions.action.confirm_archive": "确认归档",
@@ -209,6 +209,8 @@ export const zh: I18nDictionary = {
   "projects.selected":
     "✅ 已选择项目：{project}\n\n📋 会话已重置。请在此项目中使用 /sessions 或 /new。",
   "projects.select_error": "🔴 选择项目失败。",
+  "projects.previous_run_continues":
+    "⏳ 上一个任务仍在后台继续。用 /recent 重新打开该会话即可查看结果。",
 
   "sessions.project_not_selected": "🏗 未选择项目。\n\n请先使用 /projects 选择一个项目。",
   "sessions.empty": "📭 未找到会话。\n\n使用 /new 创建新会话。",

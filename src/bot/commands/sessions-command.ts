@@ -64,6 +64,7 @@ export async function sessionsCommand(
         metadata: {
           sessionIds: firstPage.sessions.map((session) => session.id),
           directories: firstPage.sessions.map((session) => session.directory),
+          sessionTitles: firstPage.sessions.map((session) => session.title),
         },
       },
       deps,

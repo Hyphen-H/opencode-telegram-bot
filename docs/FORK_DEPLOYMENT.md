@@ -39,14 +39,29 @@ official package therefore cannot replace the running fork code.
 
 ## Session deletion and archiving
 
-Ordinary, recent and temporary session lists offer single-emoji 🗑️ and 📦 buttons alongside
-each session. Both show a separate confirmation with the real session title.
-Delete removes the OpenCode session record, not project files. Archive uses the
-V2 server's archive API and excludes archived sessions from these lists; the data
-remains restorable through OpenCode. Running sessions are checked before showing
-confirmation and again before performing the action. Confirmation is tied to the
-active menu and a single-use token, so stale, cancelled or duplicate confirmations
-do not perform an operation. An API failure requires another explicit click.
+Session titles keep the whole row, so no action button narrows them. Each session
+list (ordinary, recent and temporary) ends with one **⋯ Manage sessions** entry.
+It replaces the list with the same sessions as buttons; choosing one opens 🗑️
+delete and 📦 archive plus a back button to the manage list, whose own back
+returns to the original session list. Every action asks for confirmation with the
+real session title. Delete removes the OpenCode session record, not project files.
+Archive uses the V2 server's archive API and excludes archived sessions from these
+lists; the data remains restorable through OpenCode. Running sessions are checked
+before showing confirmation and again before performing the action. Confirmation is
+tied to the active menu and a single-use token, so stale, cancelled or duplicate
+confirmations do not perform an operation. An API failure requires another explicit
+click. After the action the list drops the session and keeps the remaining
+positions.
+
+## Switching projects during a run
+
+`/projects` stays available while a session is running, and its menu callbacks are
+not blocked by the busy guard. Choosing another project leaves the running turn on
+the OpenCode server: the bot detaches from it exactly like `/detach`, hands any
+queued prompts to that session, clears its busy state and switches. The chat then
+reports that the previous task continues in the background and can be reopened
+with `/recent` to read its result. Opening or sending into the old session while it
+is still running remains refused, so two sessions are never mirrored at once.
 
 ## Creating a project
 

@@ -56,13 +56,18 @@ describe("session management confirmations", () => {
     const keyboard: InlineKeyboardMarkup = {
       inline_keyboard: [
         [
-          { text: "Real title", callback_data: kind === "recent" ? "recent:0" : "session:ses_a" },
-          { text: "⋯", callback_data: "session-actions:0" },
+          {
+            text: "Real title",
+            callback_data: kind === "recent" ? "recent:0" : "session:ses_a",
+          },
         ],
         [
-          { text: "Other", callback_data: "recent:1" },
-          { text: "⋯", callback_data: "session-actions:1" },
+          {
+            text: "Other",
+            callback_data: kind === "recent" ? "recent:1" : "session:ses_b",
+          },
         ],
+        [{ text: "⋯ Manage sessions", callback_data: "session-actions:menu" }],
       ],
     };
     const view = { message_id: 42, text: "Sessions", reply_markup: keyboard };
@@ -74,13 +79,17 @@ describe("session management confirmations", () => {
         messageId: 42,
         sessionIds: ["ses_a", "ses_b"],
         directories: ["/original/a", "/original/b"],
+        sessionTitles: ["Real title", "Other"],
       },
     });
     function context(data: string, messageId = 42): Context {
       return {
         callbackQuery: { data, message: { ...view, message_id: messageId } },
         answerCallbackQuery: vi.fn().mockResolvedValue(true),
-        editMessageReplyMarkup: vi.fn().mockResolvedValue(true),
+        editMessageReplyMarkup: vi.fn(async (options: { reply_markup: InlineKeyboardMarkup }) => {
+          view.reply_markup = options.reply_markup;
+          return true;
+        }),
         editMessageText: vi.fn(
           async (text: string, options: { reply_markup: InlineKeyboardMarkup }) => {
             view.text = text;
@@ -127,12 +136,41 @@ describe("session management confirmations", () => {
         directory: "/original/a",
       });
       expect(mocked.archive).not.toHaveBeenCalled();
-      expect(view.reply_markup.inline_keyboard).toHaveLength(1);
+      expect(view.reply_markup.inline_keyboard).toHaveLength(2);
+      expect(view.reply_markup.inline_keyboard[0]?.[0]).toMatchObject({
+        text: "Other",
+        callback_data: "session-actions:select:1",
+      });
       expect(manager.getSnapshot()?.metadata.sessionIds).toEqual([null, "ses_b"]);
       await handleSessionAction(context(confirmation), deps);
       expect(mocked.remove).toHaveBeenCalledOnce();
     },
   );
+
+  it("lists sessions behind one entry and returns to the list it came from", async () => {
+    const { deps, context, view, keyboard } = setup();
+    const labels = () => view.reply_markup.inline_keyboard.map((row) => row[0]?.text);
+
+    await handleSessionAction(context("session-actions:menu"), deps);
+    expect(labels()).toEqual(["Real title", "Other", "‹"]);
+
+    await handleSessionAction(context("session-actions:select:1"), deps);
+    expect(
+      view.reply_markup.inline_keyboard
+        .flat()
+        .map((button) => "callback_data" in button && button.callback_data),
+    ).toEqual([
+      "session-action:delete:1",
+      "session-action:archive:1",
+      "session-actions:submenu-back",
+    ]);
+
+    await handleSessionAction(context("session-actions:submenu-back"), deps);
+    expect(labels()).toEqual(["Real title", "Other", "‹"]);
+
+    await handleSessionAction(context("session-actions:back"), deps);
+    expect(view.reply_markup).toEqual(keyboard);
+  });
 
   it("archives without deleting and detaches a currently selected session", async () => {
     const { deps, context, nonce, pinClear, markIdle } = setup();

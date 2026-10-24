@@ -8,9 +8,11 @@ import type {
 import type { ProjectInfo } from "../types/project.js";
 import type { ModelInfo } from "../types/model.js";
 import { setCurrentProject } from "../stores/settings-store.js";
-import { clearSession } from "./session-service.js";
+import { clearSession, getCurrentSession } from "./session-service.js";
 import { detachAttachedSession, type DetachSessionDeps } from "./attach-service.js";
 import { stopEventListening } from "../../opencode/events.js";
+import { clearPromptResponseMode } from "../../bot/handlers/prompt.js";
+import { handOverPromptQueue } from "../../bot/handlers/prompt-handover.js";
 import { getStoredAgent, resolveProjectAgent } from "./agent-selection-service.js";
 import { getStoredModel } from "./model-selection-service.js";
 import { formatVariantForButton } from "./variant-selection-service.js";
@@ -44,11 +46,43 @@ export interface ProjectSwitchPresentation {
 }
 
 export type ProjectSwitchDeps = DetachSessionDeps &
-  Pick<AppContainer, "backgroundSessionTracker" | "resetInteractions">;
+  Pick<
+    AppContainer,
+    | "assistantRunState"
+    | "backgroundSessionTracker"
+    | "foregroundSessionState"
+    | "resetInteractions"
+  >;
 
 interface SwitchToProjectOptions extends ProjectSwitchDeps {
   ensureEventSubscription?: ((directory: string) => Promise<void>) | undefined;
   presentation: ProjectSwitchPresentation;
+}
+
+/**
+ * A project switch ends the bot's part in a running turn: the queue stays with the
+ * session like /detach, and the new project is not held busy by a run it cannot follow.
+ * The turn itself keeps running on the OpenCode server.
+ */
+async function releaseRunningTurn(options: ProjectSwitchDeps): Promise<boolean> {
+  const busySessions = options.foregroundSessionState.getBusySessions();
+  if (busySessions.length === 0 && !options.attachManager.isBusy()) {
+    return false;
+  }
+
+  const currentSession = getCurrentSession();
+  if (currentSession) {
+    await handOverPromptQueue(currentSession);
+    clearPromptResponseMode(currentSession.id);
+  }
+
+  for (const session of busySessions) {
+    options.foregroundSessionState.markIdle(session.sessionId);
+    options.assistantRunState.clearRun(session.sessionId, "project_switched");
+  }
+
+  logger.info(`[ProjectSwitch] Released a running turn: busySessions=${busySessions.length}`);
+  return true;
 }
 
 export async function switchToProject(
@@ -57,6 +91,7 @@ export async function switchToProject(
   reason: string,
   options: SwitchToProjectOptions,
 ) {
+  const releasedRun = await releaseRunningTurn(options);
   detachAttachedSession(reason, options);
   stopEventListening();
   options.backgroundSessionTracker.clear();
@@ -86,5 +121,13 @@ export async function switchToProject(
     await options.ensureEventSubscription(project.worktree);
   }
 
-  return options.presentation.createMainKeyboard(currentAgent, currentModel, contextInfo, variantName);
+  return {
+    keyboard: options.presentation.createMainKeyboard(
+      currentAgent,
+      currentModel,
+      contextInfo,
+      variantName,
+    ),
+    releasedRun,
+  };
 }

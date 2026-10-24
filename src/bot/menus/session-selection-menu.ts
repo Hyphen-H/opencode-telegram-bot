@@ -4,7 +4,7 @@ import { getDateLocale, t } from "../../i18n/index.js";
 import { formatSessionTitle } from "../../app/formatters/session-title-formatter.js";
 import { logger } from "../../utils/logger.js";
 import { collectFromPresentFolders } from "../../app/services/folder-presence-service.js";
-import { appendSessionActions } from "./session-actions-menu.js";
+import { appendSessionActionsEntry } from "./session-actions-menu.js";
 
 export const SESSION_CALLBACK_PREFIX = "session:";
 const SESSION_PAGE_CALLBACK_PREFIX = "session:page:";
@@ -162,7 +162,7 @@ function buildSessionsKeyboard(pageData: SessionPage, pageSize: number): InlineK
     const date = new Date(session.time.created).toLocaleDateString(localeForDate);
     const label = `${pageStartIndex + index + 1}. ${formatSessionTitle(session.title)} (${date})`;
     keyboard.text(label, `${SESSION_CALLBACK_PREFIX}${session.id}`);
-    appendSessionActions(keyboard, index).row();
+    keyboard.row();
   });
 
   if (pageData.page > 0) {
@@ -176,6 +176,8 @@ function buildSessionsKeyboard(pageData: SessionPage, pageSize: number): InlineK
   if (pageData.page > 0 || pageData.hasNext) {
     keyboard.row();
   }
+
+  appendSessionActionsEntry(keyboard);
 
   return keyboard;
 }

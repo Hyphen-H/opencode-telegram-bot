@@ -10,7 +10,7 @@ import type { I18nDictionary } from "./en.js";
 export const ko: I18nDictionary = {
   "sessions.action.delete": "🗑️",
   "sessions.action.archive": "📦",
-  "sessions.action.more": "⋯",
+  "sessions.action.manage": "⋯ Manage sessions",
   "sessions.action.back": "‹",
   "sessions.action.confirm_delete": "Delete permanently",
   "sessions.action.confirm_archive": "Archive",
@@ -230,6 +230,8 @@ export const ko: I18nDictionary = {
   "projects.selected":
     "✅ 프로젝트 선택됨: {project}\n\n📋 세션이 초기화되었습니다. 이 프로젝트에서 /sessions 또는 /new를 사용해 주세요.",
   "projects.select_error": "🔴 프로젝트 선택에 실패했습니다.",
+  "projects.previous_run_continues":
+    "⏳ 이전 작업은 백그라운드에서 계속 실행됩니다. /recent로 해당 세션을 다시 열면 결과를 볼 수 있습니다.",
 
   "sessions.project_not_selected":
     "🏗 프로젝트가 선택되지 않았습니다.\n\n먼저 /projects로 프로젝트를 선택해 주세요.",

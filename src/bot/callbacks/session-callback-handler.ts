@@ -331,6 +331,7 @@ export async function handleSessionSelect(ctx: Context, deps: SessionSelectDeps)
             ...deps.interactionManager.getSnapshot()?.metadata,
             sessionIds: pageData.sessions.map((session) => session.id),
             directories: pageData.sessions.map((session) => session.directory),
+            sessionTitles: pageData.sessions.map((session) => session.title),
           },
         });
       } catch (error) {

@@ -3,7 +3,7 @@ import type { I18nDictionary } from "./en.js";
 export const de: I18nDictionary = {
   "sessions.action.delete": "🗑️",
   "sessions.action.archive": "📦",
-  "sessions.action.more": "⋯",
+  "sessions.action.manage": "⋯ Manage sessions",
   "sessions.action.back": "‹",
   "sessions.action.confirm_delete": "Delete permanently",
   "sessions.action.confirm_archive": "Archive",
@@ -230,6 +230,8 @@ export const de: I18nDictionary = {
   "projects.selected":
     "✅ Projekt ausgewählt: {project}\n\n📋 Sitzung wurde zurückgesetzt. Nutze /sessions oder /new für dieses Projekt.",
   "projects.select_error": "🔴 Projekt konnte nicht ausgewählt werden.",
+  "projects.previous_run_continues":
+    "⏳ Die vorherige Aufgabe läuft im Hintergrund weiter. Öffne ihre Sitzung über /recent, um das Ergebnis zu sehen.",
 
   "sessions.project_not_selected":
     "🏗 Projekt ist nicht ausgewählt.\n\nWähle zuerst ein Projekt mit /projects.",

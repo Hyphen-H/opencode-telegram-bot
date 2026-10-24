@@ -6,7 +6,6 @@ import type {
   GuardDecision,
   IncomingInputType,
   InteractionState,
-  InteractionKind,
 } from "../../app/types/interaction.js";
 import { QUEUED_PROMPT_BUTTON_TEXT_PATTERN } from "../message-patterns.js";
 import type { LocalCommandRegistry } from "../../app/services/local-command-registry.js";
@@ -17,11 +16,24 @@ export type InteractionGuardDecisionDeps = Pick<
   "attachManager" | "foregroundSessionState" | "interactionManager"
 >;
 
-const BUSY_ALLOWED_COMMANDS = ["/abort", "/detach", "/status", "/help", "/opencode_stop"] as const;
+const BUSY_ALLOWED_COMMANDS = [
+  "/abort",
+  "/detach",
+  "/status",
+  "/help",
+  "/opencode_stop",
+  "/projects",
+] as const;
 const BUSY_ALLOWED_COMMAND_SET = new Set<string>(BUSY_ALLOWED_COMMANDS);
 
-function isBusyAllowedCommand(command: string | undefined, localCommandRegistry?: LocalCommandRegistry): boolean {
-  return Boolean(command && (BUSY_ALLOWED_COMMAND_SET.has(command) || localCommandRegistry?.allowsWhenBusy(command)));
+function isBusyAllowedCommand(
+  command: string | undefined,
+  localCommandRegistry?: LocalCommandRegistry,
+): boolean {
+  return Boolean(
+    command &&
+    (BUSY_ALLOWED_COMMAND_SET.has(command) || localCommandRegistry?.allowsWhenBusy(command)),
+  );
 }
 
 // Allowed while a task runs, but not over an interaction: the server would cancel it under the user.
@@ -35,8 +47,13 @@ function isBusyAllowedOutsideInteraction(command: string | undefined): boolean {
   );
 }
 
-function allowsBusyInteraction(kind: InteractionKind | undefined): boolean {
-  return kind === "question" || kind === "permission";
+function allowsBusyInteraction(state: InteractionState | null): boolean {
+  if (!state) return false;
+  if (state.kind === "question" || state.kind === "permission") return true;
+  return (
+    state.kind === "inline" &&
+    (state.metadata.menuKind === "project" || state.metadata.menuKind === "recent")
+  );
 }
 
 // Removing a queued prompt only makes sense while the session is busy, so the
@@ -204,7 +221,7 @@ export function resolveInteractionGuardDecision(
       return createBusyBlockDecision(inputType, state, "command_not_allowed", command);
     }
 
-    if (state && allowsBusyInteraction(state.kind)) {
+    if (state && allowsBusyInteraction(state)) {
       if (state.expectedInput === "mixed") {
         if (inputType === "callback" || inputType === "text") {
           return createAllowDecision(inputType, state, command, true);

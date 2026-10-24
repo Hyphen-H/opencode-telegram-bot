@@ -3,7 +3,7 @@ import type { I18nDictionary } from "./en.js";
 export const tr: I18nDictionary = {
   "sessions.action.delete": "🗑️",
   "sessions.action.archive": "📦",
-  "sessions.action.more": "⋯",
+  "sessions.action.manage": "⋯ Manage sessions",
   "sessions.action.back": "‹",
   "sessions.action.confirm_delete": "Delete permanently",
   "sessions.action.confirm_archive": "Archive",
@@ -224,6 +224,8 @@ export const tr: I18nDictionary = {
   "projects.selected":
     "✅ Proje seçildi: {project}\n\n📋 Oturum sıfırlandı. Bu proje için /sessions veya /new kullanın.",
   "projects.select_error": "🔴 Proje seçilemedi.",
+  "projects.previous_run_continues":
+    "⏳ Önceki görev arka planda çalışmaya devam ediyor. Sonucu görmek için oturumunu /recent ile yeniden açın.",
 
   "sessions.project_not_selected": "🏗 Proje seçilmedi.\n\nÖnce /projects ile bir proje seçin.",
   "sessions.empty": "📭 Oturum bulunamadı.\n\n/new ile yeni bir oturum oluşturun.",
