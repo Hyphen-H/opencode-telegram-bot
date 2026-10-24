@@ -1,6 +1,9 @@
 import type { I18nDictionary } from "./en.js";
 
 export const ru: I18nDictionary = {
+  "keyboard.menu_collapse": "🔽 Свернуть меню",
+  "keyboard.menu_expand": "☰ Развернуть меню",
+  "cmd.description.menu": "Показать нижнее меню",
   "cmd.description.recent": "Последние сессии всех проектов",
   "recent.heading": "Последние сессии всех проектов (обновить: /recent):",
   "recent.empty": "📭 Сессий в проектах нет.",

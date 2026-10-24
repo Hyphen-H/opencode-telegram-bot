@@ -8,6 +8,9 @@ import type { I18nDictionary } from "./en.js";
  * Keep this dictionary complete to avoid falling back to another locale.
  */
 export const ko: I18nDictionary = {
+  "keyboard.menu_collapse": "🔽 메뉴 접기",
+  "keyboard.menu_expand": "☰ 메뉴 펼치기",
+  "cmd.description.menu": "하단 메뉴 펼치기",
   "cmd.description.recent": "모든 프로젝트의 최근 세션",
   "recent.heading": "모든 프로젝트의 최근 세션 (/recent로 새로고침):",
   "recent.empty": "📭 프로젝트에 세션이 없습니다.",

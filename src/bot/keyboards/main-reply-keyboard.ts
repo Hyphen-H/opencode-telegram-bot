@@ -1,4 +1,5 @@
 import { Keyboard } from "grammy";
+import { getMainMenuCollapsed } from "../../app/stores/settings-store.js";
 import { getAgentButtonLabel } from "../../app/types/agent.js";
 import { formatModelForButton } from "../../app/types/model.js";
 import type { ModelInfo } from "../../app/types/model.js";
@@ -45,6 +46,9 @@ export function createMainKeyboard(
   queuedPromptLabels: string[] = [],
 ): Keyboard {
   const keyboard = new Keyboard();
+  if (getMainMenuCollapsed()) {
+    return keyboard.text(t("keyboard.menu_expand")).resized().persistent();
+  }
   const agentText = getAgentButtonLabel(currentAgent);
 
   // Format model with compact provider/model text and icon
@@ -68,6 +72,7 @@ export function createMainKeyboard(
 
   // Row 2: model and variant buttons
   keyboard.text(modelText).text(variantText).row();
+  keyboard.text(t("keyboard.menu_collapse"));
 
   return keyboard.resized().persistent();
 }

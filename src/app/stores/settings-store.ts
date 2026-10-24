@@ -145,6 +145,15 @@ export function flushSettings(): Promise<void> {
 
 let currentSettings: Settings = {};
 
+export function getMainMenuCollapsed(): boolean {
+  return currentSettings.mainMenuCollapsed === true;
+}
+
+export function setMainMenuCollapsed(collapsed: boolean): Promise<void> {
+  currentSettings.mainMenuCollapsed = collapsed;
+  return writeSettingsFile(currentSettings);
+}
+
 export function getCurrentProject(): ProjectInfo | undefined {
   return currentSettings.currentProject;
 }

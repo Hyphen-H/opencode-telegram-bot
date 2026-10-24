@@ -8,6 +8,8 @@ import type { ScheduledTask } from "../../../src/app/types/scheduled-task.js";
 import {
   __resetSettingsForTests,
   flushSettings,
+  getMainMenuCollapsed,
+  setMainMenuCollapsed,
   getCompactOutputMode,
   getPromptQueueMode,
   getResponseStreamingMode,
@@ -29,6 +31,18 @@ import {
 
 describe("app/stores/settings-store", () => {
   let tempHome: string;
+
+  it("persists the collapsed menu preference across reloads", async () => {
+    expect(getMainMenuCollapsed()).toBe(false);
+    await setMainMenuCollapsed(true);
+    __resetSettingsForTests();
+    await loadSettings();
+    expect(getMainMenuCollapsed()).toBe(true);
+    await setMainMenuCollapsed(false);
+    __resetSettingsForTests();
+    await loadSettings();
+    expect(getMainMenuCollapsed()).toBe(false);
+  });
 
   beforeEach(async () => {
     delete process.env.INITIAL_SETTINGS_PRESET;

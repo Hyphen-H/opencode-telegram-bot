@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+const collapsed = vi.hoisted(() => ({ value: false }));
+vi.mock("../../../src/app/stores/settings-store.js", () => ({
+  getMainMenuCollapsed: () => collapsed.value,
+}));
 import {
   createAgentKeyboard,
   createMainKeyboard,
@@ -19,6 +23,22 @@ function buttonTextAt(
 }
 
 describe("bot/keyboards/main-reply-keyboard", () => {
+  beforeEach(() => {
+    collapsed.value = false;
+  });
+
+  it("shows only the expand button when collapsed, including while prompts are queued", () => {
+    collapsed.value = true;
+    const keyboard = createMainKeyboard(
+      "build",
+      { providerID: "p", modelID: "m" },
+      undefined,
+      undefined,
+      ["queued"],
+    );
+    expect(keyboard.keyboard).toEqual([[{ text: "☰ Show menu" }]]);
+    expect(keyboard.is_persistent).toBe(true);
+  });
   it("creates main keyboard with defaults", () => {
     const keyboard = createMainKeyboard("build", {
       providerID: "openrouter",
@@ -52,7 +72,7 @@ describe("bot/keyboards/main-reply-keyboard", () => {
     expect(buttonTextAt(keyboard, 1, 1)).toBe("⚡ Fast");
   });
 
-  it("keeps the fixed 2x2 grid when no prompt is queued", () => {
+  it("keeps the fixed 2x2 grid with a collapse row when no prompt is queued", () => {
     const keyboard = createMainKeyboard(
       "build",
       { providerID: "openrouter", modelID: "openai/gpt-4o" },
@@ -61,7 +81,8 @@ describe("bot/keyboards/main-reply-keyboard", () => {
       [],
     );
 
-    expect(keyboard.keyboard.filter((row) => row.length > 0)).toHaveLength(2);
+    expect(keyboard.keyboard.filter((row) => row.length > 0)).toHaveLength(3);
+    expect(buttonTextAt(keyboard, 2, 0)).toBe("🔽 Hide menu");
   });
 
   it("puts queued prompt rows above the fixed grid", () => {

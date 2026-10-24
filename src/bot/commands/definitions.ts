@@ -24,6 +24,7 @@ interface BotCommandI18nDefinition {
  * Update this array when adding new commands
  */
 const COMMAND_DEFINITIONS: BotCommandI18nDefinition[] = [
+  { command: "menu", descriptionKey: "cmd.description.menu" },
   { command: "status", descriptionKey: "cmd.description.status" },
   { command: "new", descriptionKey: "cmd.description.new" },
   { command: "abort", descriptionKey: "cmd.description.stop" },

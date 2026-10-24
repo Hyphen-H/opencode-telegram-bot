@@ -8,6 +8,9 @@ import type { I18nDictionary } from "./en.js";
  * Keep this dictionary complete to avoid falling back to another locale.
  */
 export const ar: I18nDictionary = {
+  "keyboard.menu_collapse": "🔽 إخفاء القائمة",
+  "keyboard.menu_expand": "☰ إظهار القائمة",
+  "cmd.description.menu": "إظهار القائمة السفلية",
   "cmd.description.recent": "الجلسات الأخيرة عبر المشاريع",
   "recent.heading": "الجلسات الأخيرة عبر المشاريع (للتحديث: /recent):",
   "recent.empty": "📭 لا توجد جلسات في المشاريع.",

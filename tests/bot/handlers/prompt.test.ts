@@ -61,6 +61,7 @@ vi.mock("../../../src/app/services/session-cache-service.js", () => ({
 }));
 
 vi.mock("../../../src/app/stores/settings-store.js", () => ({
+  getMainMenuCollapsed: vi.fn(() => false),
   getCurrentProject: vi.fn(() => mocked.currentProject),
   getTtsMode: mocked.getTtsModeMock,
 }));

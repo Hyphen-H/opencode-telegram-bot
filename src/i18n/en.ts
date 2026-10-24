@@ -1,4 +1,7 @@
 export const en = {
+  "keyboard.menu_collapse": "🔽 Hide menu",
+  "keyboard.menu_expand": "☰ Show menu",
+  "cmd.description.menu": "Show the bottom menu",
   "cmd.description.recent": "Recent sessions across projects",
   "recent.heading": "Recent sessions across projects (run /recent to refresh):",
   "recent.empty": "📭 No sessions found across projects.",

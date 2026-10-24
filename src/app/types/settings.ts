@@ -13,6 +13,7 @@ export interface ScheduledTaskSessionIgnoreInfo {
 }
 
 export interface Settings {
+  mainMenuCollapsed?: boolean | undefined;
   currentProject?: ProjectInfo | undefined;
   currentSession?: SessionInfo | undefined;
   currentAgent?: string | undefined;

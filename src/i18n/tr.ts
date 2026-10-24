@@ -1,6 +1,9 @@
 import type { I18nDictionary } from "./en.js";
 
 export const tr: I18nDictionary = {
+  "keyboard.menu_collapse": "🔽 Menüyü gizle",
+  "keyboard.menu_expand": "☰ Menüyü göster",
+  "cmd.description.menu": "Alt menüyü göster",
   "cmd.description.recent": "Projelerdeki son oturumlar",
   "recent.heading": "Projelerdeki son oturumlar (/recent ile yenile):",
   "recent.empty": "📭 Projelerde oturum bulunamadı.",

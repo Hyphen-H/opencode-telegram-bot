@@ -21,6 +21,7 @@ import {
 import { initializePromptHandover } from "./handlers/prompt-handover.js";
 import { normalizeRichMessage } from "./handlers/rich-message-handler.js";
 import { authMiddleware } from "./middleware/auth.js";
+import { registerMenuToggle } from "./keyboards/menu-toggle.js";
 import { interactionGuardMiddleware } from "./middleware/interaction-guard.js";
 import { staleUpdateMiddleware } from "./middleware/stale-update.js";
 import {
@@ -212,6 +213,8 @@ export function createBot(
 
   bot.use(authMiddleware);
   bot.use(staleUpdateMiddleware);
+  // UI-only actions must not become prompts or consume pending question input.
+  registerMenuToggle(bot, container);
   bot.on("message:rich_message", normalizeRichMessage);
   bot.use((ctx, next) => ensureCommandsInitialized(ctx, next, localCommandRegistry));
   const guardDeps = { ...container, localCommandRegistry };

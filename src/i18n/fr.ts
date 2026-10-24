@@ -1,6 +1,9 @@
 import type { I18nDictionary } from "./en.js";
 
 export const fr: I18nDictionary = {
+  "keyboard.menu_collapse": "🔽 Masquer le menu",
+  "keyboard.menu_expand": "☰ Afficher le menu",
+  "cmd.description.menu": "Afficher le menu inférieur",
   "cmd.description.recent": "Sessions récentes de tous les projets",
   "recent.heading": "Sessions récentes de tous les projets (actualiser avec /recent) :",
   "recent.empty": "📭 Aucune session dans les projets.",

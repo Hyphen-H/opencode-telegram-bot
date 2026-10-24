@@ -1,6 +1,9 @@
 import type { I18nDictionary } from "./en.js";
 
 export const zh: I18nDictionary = {
+  "keyboard.menu_collapse": "🔽 收起菜单",
+  "keyboard.menu_expand": "☰ 展开菜单",
+  "cmd.description.menu": "展开底部菜单",
   "cmd.description.recent": "查看所有项目的最近会话",
   "recent.heading": "所有项目的最近会话（用 /recent 刷新）：",
   "recent.empty": "📭 所有项目中都没有会话。",
