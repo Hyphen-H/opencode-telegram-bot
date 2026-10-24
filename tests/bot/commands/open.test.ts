@@ -31,6 +31,15 @@ const mocked = vi.hoisted(() => ({
   }),
   switchToProjectMock: vi.fn().mockResolvedValue({ keyboard: [[{ text: "mock" }]] }),
   interactionStartMock: vi.fn(),
+  inspectDirectoryMock: vi.fn().mockResolvedValue("exists"),
+  createDirectoryMock: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../../../src/app/services/project-directory-service.js", () => ({
+  inspectProjectDirectory: mocked.inspectDirectoryMock,
+  createProjectDirectory: mocked.createDirectoryMock,
+  resolveProjectDirectoryInput: (input: string, base: string) =>
+    input.startsWith("/") ? input : `${base}/${input}`,
 }));
 
 vi.mock("../../../src/app/services/file-browser-service.js", () => ({
@@ -77,7 +86,10 @@ vi.mock("../../../src/utils/logger.js", () => ({
 }));
 
 import { openCommand } from "../../../src/bot/commands/open-command.js";
-import { handleOpenCallback } from "../../../src/bot/callbacks/file-browser-callback-handler.js";
+import {
+  handleOpenCallback,
+  handleOpenPathInput,
+} from "../../../src/bot/callbacks/file-browser-callback-handler.js";
 import { clearOpenPathIndex } from "../../../src/bot/menus/file-browser-menu.js";
 import { createTestAppContainer } from "../../helpers/app-container.js";
 
@@ -132,6 +144,7 @@ function createDeps() {
       start: mocked.interactionStartMock,
       getSnapshot: vi.fn(() => null),
       clear: vi.fn(),
+      transition: vi.fn(),
     } as never,
   });
 }
@@ -158,6 +171,85 @@ describe("open command", () => {
     mocked.switchToProjectMock.mockReset().mockResolvedValue({ keyboard: [[{ text: "mock" }]] });
     mocked.upsertSessionDirectoryMock.mockReset().mockResolvedValue(undefined);
     mocked.interactionStartMock.mockReset();
+    mocked.inspectDirectoryMock.mockReset().mockResolvedValue("exists");
+    mocked.createDirectoryMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("opens a folder-name input flow from the browser", async () => {
+    const deps = createTestAppContainer();
+    deps.interactionManager.start({
+      kind: "inline",
+      expectedInput: "callback",
+      metadata: { menuKind: "open", messageId: 42 },
+    });
+    const ctx = createCallbackContext("open:mkdir:/home/user");
+    await handleOpenCallback(ctx, deps);
+    expect(deps.interactionManager.getSnapshot()).toMatchObject({
+      expectedInput: "mixed",
+      metadata: { stage: "folder", basePath: "/home/user" },
+    });
+    expect(ctx.editMessageText).toHaveBeenCalledWith(
+      t("open.folder_prompt", { path: "~" }),
+      expect.anything(),
+    );
+  });
+
+  it("asks before creating a missing typed directory and consumes the input", async () => {
+    const deps = createTestAppContainer();
+    deps.interactionManager.start({
+      kind: "inline",
+      expectedInput: "mixed",
+      metadata: { menuKind: "open", messageId: 42, stage: "path", basePath: "/home/user" },
+    });
+    mocked.inspectDirectoryMock.mockResolvedValue("missing");
+    const ctx = {
+      chat: { id: 123 },
+      message: { text: "/home/user/new-project" },
+      api: { editMessageText: vi.fn().mockResolvedValue(true) },
+    } as unknown as Context;
+    expect(await handleOpenPathInput(ctx, deps)).toBe(true);
+    expect(ctx.api.editMessageText).toHaveBeenCalledWith(
+      123,
+      42,
+      t("open.create_prompt", { path: "~/new-project" }),
+      expect.anything(),
+    );
+    expect(mocked.createDirectoryMock).not.toHaveBeenCalled();
+    expect(deps.interactionManager.getSnapshot()?.expectedInput).toBe("callback");
+  });
+
+  it("creates only after confirmation and browses the new directory", async () => {
+    const deps = createTestAppContainer();
+    deps.interactionManager.start({
+      kind: "inline",
+      expectedInput: "callback",
+      metadata: { menuKind: "open", messageId: 42 },
+    });
+    mocked.scanDirectoryMock.mockResolvedValue(makeScanResult([], "/home/user/new-project"));
+    const ctx = createCallbackContext("open:create:/home/user/new-project");
+    await handleOpenCallback(ctx, deps);
+    expect(mocked.createDirectoryMock).toHaveBeenCalledWith("/home/user/new-project");
+    expect(ctx.editMessageText).toHaveBeenCalled();
+    expect(mocked.switchToProjectMock).not.toHaveBeenCalled();
+  });
+
+  it("retains the path flow on invalid input and ignores ordinary conversation", async () => {
+    const deps = createTestAppContainer();
+    const ctx = {
+      chat: { id: 123 },
+      message: { text: "new" },
+      reply: vi.fn(),
+    } as unknown as Context;
+    expect(await handleOpenPathInput(ctx, deps)).toBe(false);
+    deps.interactionManager.start({
+      kind: "inline",
+      expectedInput: "mixed",
+      metadata: { menuKind: "open", messageId: 42, stage: "path", basePath: "/home/user" },
+    });
+    mocked.inspectDirectoryMock.mockRejectedValue(new Error("denied"));
+    expect(await handleOpenPathInput(ctx, deps)).toBe(true);
+    expect(ctx.reply).toHaveBeenCalledWith(t("open.path_error", { error: "denied" }));
+    expect(deps.interactionManager.getSnapshot()?.expectedInput).toBe("mixed");
   });
 
   describe("openCommand", () => {

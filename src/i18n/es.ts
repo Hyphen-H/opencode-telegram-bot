@@ -1,6 +1,15 @@
 import type { I18nDictionary } from "./en.js";
 
 export const es: I18nDictionary = {
+  "projects.new": "➕ New project",
+  "open.new_folder": "📁 New folder",
+  "open.enter_path": "✏️ Enter path",
+  "open.folder_prompt": "New folder in {path}\nSend a folder name.",
+  "open.path_prompt": "Send a path (absolute, ~/path, or relative to {path}).",
+  "open.create_prompt": "Create this directory?\n{path}",
+  "open.create_confirm": "✅ Create directory",
+  "open.invalid_path": "Enter a valid directory path or folder name.",
+  "open.path_error": "⚠️ {error}\nTry again or go back.",
   "keyboard.menu_collapse": "🔽 Ocultar menú",
   "keyboard.menu_expand": "☰ Mostrar menú",
   "cmd.description.menu": "Mostrar el menú inferior",

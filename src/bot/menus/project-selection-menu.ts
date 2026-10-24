@@ -161,6 +161,7 @@ async function buildProjectsKeyboard(
     }
   }
 
+  keyboard.row().text(t("projects.new"), "projects:new");
   return keyboard;
 }
 

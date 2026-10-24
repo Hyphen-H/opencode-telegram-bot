@@ -168,7 +168,20 @@ export function resolveInteractionGuardDecision(
 ): GuardDecision {
   const { attachManager, foregroundSessionState, interactionManager } = deps;
   const state = interactionManager.getSnapshot();
-  const { inputType, command } = classifyIncomingInput(ctx);
+  let { inputType, command } = classifyIncomingInput(ctx);
+  // Absolute paths are text in the directory input flow, not unknown bot commands.
+  if (
+    state?.kind === "inline" &&
+    state.metadata.menuKind === "open" &&
+    ["folder", "path"].includes(String(state.metadata.stage)) &&
+    inputType === "command" &&
+    command &&
+    !isKnownCommand(command.slice(1)) &&
+    !localCommandRegistry?.has(command)
+  ) {
+    inputType = "text";
+    command = undefined;
+  }
   const isBusy = foregroundSessionState.isBusy() || attachManager.isBusy();
 
   if (state && interactionManager.isExpired()) {

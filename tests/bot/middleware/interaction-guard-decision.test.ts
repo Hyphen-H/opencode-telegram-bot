@@ -53,6 +53,31 @@ beforeEach(() => {
 });
 
 describe("interaction guard", () => {
+  it("accepts absolute paths only during project directory input, preserving real commands", () => {
+    deps.interactionManager.start({
+      kind: "inline",
+      expectedInput: "mixed",
+      metadata: { menuKind: "open", stage: "path" },
+    });
+    expect(
+      resolveInteractionGuardDecision(createContext({ text: "/root/new-project" }), deps),
+    ).toMatchObject({ allow: true, inputType: "text" });
+    expect(resolveInteractionGuardDecision(createContext({ text: "/root" }), deps)).toMatchObject({
+      allow: true,
+      inputType: "text",
+    });
+    expect(resolveInteractionGuardDecision(createContext({ text: "/help" }), deps)).toMatchObject({
+      allow: true,
+      inputType: "command",
+    });
+    deps.interactionManager.transition({
+      expectedInput: "callback",
+      metadata: { menuKind: "open", stage: "browse" },
+    });
+    expect(
+      resolveInteractionGuardDecision(createContext({ text: "/root/new-project" }), deps).allow,
+    ).toBe(false);
+  });
   beforeEach(() => {
     deps.interactionManager.clear("test_setup");
   });

@@ -8,6 +8,15 @@ import type { I18nDictionary } from "./en.js";
  * Keep this dictionary complete to avoid falling back to another locale.
  */
 export const ko: I18nDictionary = {
+  "projects.new": "➕ New project",
+  "open.new_folder": "📁 New folder",
+  "open.enter_path": "✏️ Enter path",
+  "open.folder_prompt": "New folder in {path}\nSend a folder name.",
+  "open.path_prompt": "Send a path (absolute, ~/path, or relative to {path}).",
+  "open.create_prompt": "Create this directory?\n{path}",
+  "open.create_confirm": "✅ Create directory",
+  "open.invalid_path": "Enter a valid directory path or folder name.",
+  "open.path_error": "⚠️ {error}\nTry again or go back.",
   "keyboard.menu_collapse": "🔽 메뉴 접기",
   "keyboard.menu_expand": "☰ 메뉴 펼치기",
   "cmd.description.menu": "하단 메뉴 펼치기",

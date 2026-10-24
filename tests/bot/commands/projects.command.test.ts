@@ -72,6 +72,21 @@ beforeEach(() => {
 });
 
 describe("bot/commands/projects command", () => {
+  it("offers project creation even when the project list is empty", async () => {
+    mocked.getProjectsMock.mockResolvedValue([]);
+    await projectsCommand(createContext() as never, container);
+    expect(mocked.replyWithInlineMenuMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        keyboard: expect.objectContaining({
+          inline_keyboard: expect.arrayContaining([
+            expect.arrayContaining([expect.objectContaining({ callback_data: "projects:new" })]),
+          ]),
+        }),
+      }),
+      container,
+    );
+  });
   beforeEach(() => {
     mocked.currentProject = null;
     mocked.syncSessionDirectoryCacheMock.mockReset();

@@ -30,6 +30,9 @@ export const OPEN_CALLBACK_NAV_PREFIX = "open:nav:";
 export const OPEN_CALLBACK_SELECT_PREFIX = "open:sel:";
 export const OPEN_CALLBACK_PAGE_PREFIX = "open:pg:";
 export const OPEN_CALLBACK_ROOTS = "open:roots";
+export const OPEN_CALLBACK_MKDIR_PREFIX = "open:mkdir:";
+export const OPEN_CALLBACK_PATH_PREFIX = "open:path:";
+export const OPEN_CALLBACK_CREATE_PREFIX = "open:create:";
 
 export const LS_CALLBACK_PREFIX = "ls:";
 export const LS_CALLBACK_NAV_PREFIX = "ls:nav:";
@@ -222,6 +225,10 @@ function buildOpenBrowseKeyboard(
   keyboard
     .text(t("open.select_current"), encodeOpenPathForCallback(OPEN_CALLBACK_SELECT_PREFIX, currentPath))
     .row();
+  keyboard
+    .text(t("open.new_folder"), encodeOpenPathForCallback(OPEN_CALLBACK_MKDIR_PREFIX, currentPath))
+    .text(t("open.enter_path"), encodeOpenPathForCallback(OPEN_CALLBACK_PATH_PREFIX, currentPath))
+    .row();
   appendInlineMenuCancelButton(keyboard, "open");
 
   return keyboard;
@@ -255,6 +262,11 @@ export function buildOpenRootsKeyboard(): InlineKeyboard {
     keyboard.text(label, encodeOpenPathForCallback(OPEN_CALLBACK_NAV_PREFIX, root)).row();
   }
 
+  const root = getBrowserRoots()[0];
+  if (root)
+    keyboard
+      .text(t("open.enter_path"), encodeOpenPathForCallback(OPEN_CALLBACK_PATH_PREFIX, root))
+      .row();
   appendInlineMenuCancelButton(keyboard, "open");
   return keyboard;
 }

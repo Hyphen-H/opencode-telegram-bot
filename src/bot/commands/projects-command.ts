@@ -27,11 +27,6 @@ export async function projectsCommand(
     await syncSessionDirectoryCache();
     const projects = await getListedProjects();
 
-    if (projects.length === 0) {
-      await ctx.reply(t("projects.empty"));
-      return;
-    }
-
     const { text, keyboard } = await buildProjectsMenuView(projects, 0);
 
     await replyWithInlineMenu(ctx, {

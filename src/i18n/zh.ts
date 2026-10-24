@@ -1,6 +1,15 @@
 import type { I18nDictionary } from "./en.js";
 
 export const zh: I18nDictionary = {
+  "projects.new": "➕ 新建项目",
+  "open.new_folder": "📁 新建文件夹",
+  "open.enter_path": "✏️ 输入路径",
+  "open.folder_prompt": "在 {path} 下新建文件夹\n请发送文件夹名称。",
+  "open.path_prompt": "请发送路径：绝对路径、~/路径，或相对于 {path} 的路径。",
+  "open.create_prompt": "确认创建目录？\n{path}",
+  "open.create_confirm": "✅ 创建目录",
+  "open.invalid_path": "请输入有效的目录路径或文件夹名称。",
+  "open.path_error": "⚠️ {error}\n请重新输入或返回。",
   "keyboard.menu_collapse": "🔽 收起菜单",
   "keyboard.menu_expand": "☰ 展开菜单",
   "cmd.description.menu": "展开底部菜单",

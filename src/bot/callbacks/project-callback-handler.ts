@@ -10,6 +10,7 @@ import {
   type ProjectSwitchDeps,
 } from "../../app/services/project-switch-service.js";
 import { t } from "../../i18n/index.js";
+import { openCommand } from "../commands/open-command.js";
 import { logger } from "../../utils/logger.js";
 import { alert, failure } from "./feedback.js";
 import {
@@ -37,14 +38,23 @@ export async function handleProjectSelect(ctx: Context, deps: ProjectSelectDeps)
   }
 
   const page = parseProjectPageCallback(callbackQuery.data);
+  const isNewProject = callbackQuery.data === "projects:new";
   const isProjectSelection = callbackQuery.data.startsWith("project:");
 
-  if (page === null && !isProjectSelection) {
+  if (page === null && !isProjectSelection && !isNewProject) {
     return false;
   }
 
   if (isForegroundBusy(deps)) {
     await replyBusyBlocked(ctx);
+    return true;
+  }
+
+  if (isNewProject) {
+    if (!(await ensureActiveInlineMenu(ctx, "project", deps))) return true;
+    await ctx.answerCallbackQuery();
+    await openCommand(ctx, deps);
+    await ctx.deleteMessage().catch(() => {});
     return true;
   }
 

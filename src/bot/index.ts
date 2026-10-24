@@ -22,6 +22,7 @@ import { initializePromptHandover } from "./handlers/prompt-handover.js";
 import { normalizeRichMessage } from "./handlers/rich-message-handler.js";
 import { authMiddleware } from "./middleware/auth.js";
 import { registerMenuToggle } from "./keyboards/menu-toggle.js";
+import { handleOpenPathInput } from "./callbacks/file-browser-callback-handler.js";
 import { interactionGuardMiddleware } from "./middleware/interaction-guard.js";
 import { staleUpdateMiddleware } from "./middleware/stale-update.js";
 import {
@@ -219,6 +220,9 @@ export function createBot(
   bot.use((ctx, next) => ensureCommandsInitialized(ctx, next, localCommandRegistry));
   const guardDeps = { ...container, localCommandRegistry };
   bot.use((ctx, next) => interactionGuardMiddleware(ctx, next, guardDeps));
+  bot.use(async (ctx, next) => {
+    if (!(await handleOpenPathInput(ctx, container))) await next();
+  });
 
   registerCommandRouter(bot, { container, localCommandRegistry });
   registerCallbackRouter(bot, { container });

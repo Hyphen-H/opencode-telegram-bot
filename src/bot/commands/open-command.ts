@@ -1,4 +1,4 @@
-import type { CommandContext, Context } from "grammy";
+import type { Context } from "grammy";
 import type { AppContainer } from "../../app/bootstrap/app-container.js";
 import { getBrowserRoots } from "../../app/services/file-browser-service.js";
 import { isForegroundBusy } from "../../app/services/run-control-service.js";
@@ -13,10 +13,7 @@ export type OpenCommandDeps = Pick<
   "attachManager" | "foregroundSessionState" | "interactionManager"
 >;
 
-export async function openCommand(
-  ctx: CommandContext<Context>,
-  deps: OpenCommandDeps,
-): Promise<void> {
+export async function openCommand(ctx: Context, deps: OpenCommandDeps): Promise<void> {
   try {
     if (isForegroundBusy(deps)) {
       await replyBusyBlocked(ctx);

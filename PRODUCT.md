@@ -40,6 +40,7 @@ No public inbound ports are required for normal usage.
 - Fetch available projects from OpenCode API (name + path)
 - Select and switch projects
 - Persist selected project between restarts (`settings.json`)
+- Create projects from `/projects`: browse allowed directories, create a folder after confirmation, or type an absolute, home-relative or browse-relative path; reject file targets and symlink escapes
 
 ### Session management
 

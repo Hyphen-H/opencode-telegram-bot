@@ -27,7 +27,18 @@ checkout's CLI using `OPENCODE_TELEGRAM_CLI`. That wrapper remains outside npm's
 installation directory, as does its systemd override. Global npm updates of the
 official package therefore cannot replace the running fork code.
 
-## Updates
+## Creating projects
+
+Use `/projects` → **New project** to browse the configured `OPEN_BROWSER_ROOTS`
+(the home directory by default). Choose **New folder** to create a child folder,
+or **Enter path** for an absolute path, `~/path`, or a path relative to the current
+directory. Missing paths require confirmation before any directories are created.
+Existing directories open in the browser without overwriting contents. Select the
+current directory to add it to the project list; no git repository is initialized.
+The same folder/path buttons are available in `/open`. Cancel or Back leaves the
+creation flow, and typed paths are never forwarded as AI prompts.
+
+## Updating the fork
 
 For deployed fork changes, from the clean deployment checkout:
 
