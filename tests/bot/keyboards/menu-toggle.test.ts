@@ -1,13 +1,18 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 const setCollapsed = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const getSession = vi.hoisted(() => vi.fn());
 vi.mock("../../../src/app/stores/settings-store.js", () => ({
   setMainMenuCollapsed: setCollapsed,
+  getCurrentSession: getSession,
 }));
 import { registerMenuToggle } from "../../../src/bot/keyboards/menu-toggle.js";
 import { defined } from "../../helpers/defined.js";
 
 describe("menu toggle", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getSession.mockReturnValue({ title: "Current task" });
+  });
 
   function setup() {
     const bot = { hears: vi.fn(), command: vi.fn() };
@@ -30,12 +35,19 @@ describe("menu toggle", () => {
     const { ctx, hide, keyboard } = setup();
     await hide(ctx);
     expect(setCollapsed).toHaveBeenCalledWith(true);
-    expect(ctx.reply).toHaveBeenCalledExactlyOnceWith("\u2063", {
+    expect(ctx.reply).toHaveBeenCalledExactlyOnceWith("💬 Current task", {
       disable_notification: true,
       reply_markup: keyboard,
     });
     expect(ctx.api.deleteMessage).not.toHaveBeenCalled();
     expect(ctx.deleteMessage).toHaveBeenCalledOnce();
+  });
+
+  it("offers session selection instead of an empty bubble when no session is selected", async () => {
+    const { ctx, menu } = setup();
+    getSession.mockReturnValue(undefined);
+    await menu(ctx);
+    expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining("session"), expect.anything());
   });
 
   it("restores the menu with its button or /menu", async () => {

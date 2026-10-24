@@ -18,6 +18,9 @@ describe("recent session buttons", () => {
     const buttons = keyboard.inline_keyboard
       .filter((buttons) => buttons.length > 0)
       .map((buttons) => buttons[0]!);
+    for (const row of keyboard.inline_keyboard.filter((row) => row.length > 0)) {
+      expect(row.slice(1).map((button) => button.text)).toEqual(["🗑️", "📦"]);
+    }
     expect(buttons[0]?.text).toContain("⏳ [alpha/shared]");
     expect(buttons[1]?.text).toContain("❓ [beta/shared]");
     expect(buttons[2]?.text).toContain("🔐 [third]");

@@ -8,8 +8,8 @@ import type { I18nDictionary } from "./en.js";
  * Keep this dictionary complete to avoid falling back to another locale.
  */
 export const ko: I18nDictionary = {
-  "sessions.action.delete": "🗑 Delete",
-  "sessions.action.archive": "📦 Archive",
+  "sessions.action.delete": "🗑️",
+  "sessions.action.archive": "📦",
   "sessions.action.confirm_delete": "Delete permanently",
   "sessions.action.confirm_archive": "Archive",
   "sessions.action.delete_prompt": "Delete “{title}”?\nThis cannot be undone. Project files are not deleted.",

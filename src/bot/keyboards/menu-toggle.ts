@@ -1,6 +1,7 @@
 import type { Bot, Context } from "grammy";
 import type { KeyboardManager } from "./keyboard-manager.js";
-import { setMainMenuCollapsed } from "../../app/stores/settings-store.js";
+import { getCurrentSession, setMainMenuCollapsed } from "../../app/stores/settings-store.js";
+import { formatSessionTitle } from "../../app/formatters/session-title-formatter.js";
 import { t } from "../../i18n/index.js";
 import { logger } from "../../utils/logger.js";
 
@@ -17,8 +18,10 @@ export function registerMenuToggle(
       const keyboard = container.keyboardManager.getKeyboard();
       if (!keyboard) return;
       // Deleting the current carrier retracts the keyboard in some Telegram clients.
-      // Keep the latest silent carrier and clean up only the previous one.
-      const carrier = await ctx.reply("\u2063", {
+      // Give the retained carrier useful context instead of an empty bubble.
+      const session = getCurrentSession();
+      const text = session ? `💬 ${formatSessionTitle(session.title)}` : t("sessions.select");
+      const carrier = await ctx.reply(text, {
         disable_notification: true,
         reply_markup: keyboard,
       });

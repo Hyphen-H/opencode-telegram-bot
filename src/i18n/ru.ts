@@ -1,8 +1,8 @@
 import type { I18nDictionary } from "./en.js";
 
 export const ru: I18nDictionary = {
-  "sessions.action.delete": "🗑 Delete",
-  "sessions.action.archive": "📦 Archive",
+  "sessions.action.delete": "🗑️",
+  "sessions.action.archive": "📦",
   "sessions.action.confirm_delete": "Delete permanently",
   "sessions.action.confirm_archive": "Archive",
   "sessions.action.delete_prompt": "Delete “{title}”?\nThis cannot be undone. Project files are not deleted.",

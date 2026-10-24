@@ -4,7 +4,8 @@ This fork keeps the collapsible bottom keyboard in source control. The collapsed
 preference survives restarts in the existing app home's `settings.json`.
 `/menu` restores the full keyboard and its command input is kept. Toggling sends
 no confirmation text: Telegram requires a new message to update a reply keyboard,
-so the bot keeps its latest silent, invisible carrier. Only a previous carrier
+so the bot keeps its latest silent carrier showing the current session title
+(or a session-selection prompt when none is selected). Only a previous carrier
 and button inputs are cleaned up. Deleting the latest carrier retracts the
 keyboard on some Telegram clients. Verify behavior on the clients you use.
 
@@ -38,7 +39,7 @@ official package therefore cannot replace the running fork code.
 
 ## Session deletion and archiving
 
-Ordinary, recent and temporary session lists offer Delete and Archive alongside
+Ordinary, recent and temporary session lists offer single-emoji 🗑️ and 📦 buttons alongside
 each session. Both show a separate confirmation with the real session title.
 Delete removes the OpenCode session record, not project files. Archive uses the
 V2 server's archive API and excludes archived sessions from these lists; the data
