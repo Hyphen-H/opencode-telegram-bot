@@ -3,6 +3,8 @@ import type { I18nDictionary } from "./en.js";
 export const zh: I18nDictionary = {
   "sessions.action.delete": "🗑️",
   "sessions.action.archive": "📦",
+  "sessions.action.more": "⋯",
+  "sessions.action.back": "‹",
   "sessions.action.confirm_delete": "确认永久删除",
   "sessions.action.confirm_archive": "确认归档",
   "sessions.action.delete_prompt": "删除「{title}」？\n此操作不可撤销，不会删除项目文件。",

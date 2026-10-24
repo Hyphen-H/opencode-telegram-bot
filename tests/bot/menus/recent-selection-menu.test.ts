@@ -4,7 +4,8 @@ import type { RecentSession } from "../../../src/app/services/recent-sessions-se
 import { t } from "../../../src/i18n/index.js";
 
 const row = (id: string, directory: string, status: RecentSession["status"]): RecentSession => ({
-  session: { id, directory, title: "A".repeat(100) } as RecentSession["session"], status,
+  session: { id, directory, title: "A".repeat(100) } as RecentSession["session"],
+  status,
 });
 
 describe("recent session buttons", () => {
@@ -17,24 +18,40 @@ describe("recent session buttons", () => {
     ]);
     const buttons = keyboard.inline_keyboard
       .filter((buttons) => buttons.length > 0)
+      .filter(
+        (buttons) =>
+          "callback_data" in buttons[0]! && buttons[0]!.callback_data.startsWith("recent:"),
+      )
       .map((buttons) => buttons[0]!);
     for (const row of keyboard.inline_keyboard.filter((row) => row.length > 0)) {
-      expect(row.slice(1).map((button) => button.text)).toEqual(["🗑️", "📦"]);
+      if ("callback_data" in row[0]! && row[0]!.callback_data.startsWith("recent:")) {
+        expect(row.slice(1).map((button) => button.text)).toEqual(["⋯"]);
+      }
     }
     expect(buttons[0]?.text).toContain("⏳ [alpha/shared]");
     expect(buttons[1]?.text).toContain("❓ [beta/shared]");
     expect(buttons[2]?.text).toContain("🔐 [third]");
     expect(buttons[3]?.text).toContain("○ [idle]");
     expect(buttons.every((button) => [...button.text].length <= 64)).toBe(true);
-    expect(buttons.map((button) => "callback_data" in button ? button.callback_data : null)).toEqual(["recent:0", "recent:1", "recent:2", "recent:3"]);
+    expect(
+      buttons.map((button) => ("callback_data" in button ? button.callback_data : null)),
+    ).toEqual(["recent:0", "recent:1", "recent:2", "recent:3"]);
     expect(text).toContain("⏳");
     expect(text).toContain("🔐");
   });
 
   it("keeps the differing parent segment visible when project paths are long", () => {
     const { keyboard } = buildRecentMenu([
-      row("a", "/work/very-long-common-prefix-northern-folder/shared-repository-with-a-long-name", "idle"),
-      row("b", "/work/very-long-common-prefix-southern-folder/shared-repository-with-a-long-name", "idle"),
+      row(
+        "a",
+        "/work/very-long-common-prefix-northern-folder/shared-repository-with-a-long-name",
+        "idle",
+      ),
+      row(
+        "b",
+        "/work/very-long-common-prefix-southern-folder/shared-repository-with-a-long-name",
+        "idle",
+      ),
     ]);
     const labels = keyboard.inline_keyboard
       .filter((buttons) => buttons.length > 0)
@@ -76,8 +93,13 @@ describe("recent session buttons", () => {
 
   it("shows a session OpenCode has not named yet as a new session", () => {
     const { keyboard } = buildRecentMenu([
-      { session: { id: "a", directory: "/repo", title: "" } as RecentSession["session"], status: "idle" },
+      {
+        session: { id: "a", directory: "/repo", title: "" } as RecentSession["session"],
+        status: "idle",
+      },
     ]);
-    expect(keyboard.inline_keyboard.flat()[0]?.text).toBe(`○ [repo] ${t("pinned.default_session_title")}`);
+    expect(keyboard.inline_keyboard.flat()[0]?.text).toBe(
+      `○ [repo] ${t("pinned.default_session_title")}`,
+    );
   });
 });

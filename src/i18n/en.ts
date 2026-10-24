@@ -1,6 +1,8 @@
 export const en = {
   "sessions.action.delete": "🗑️",
   "sessions.action.archive": "📦",
+  "sessions.action.more": "⋯",
+  "sessions.action.back": "‹",
   "sessions.action.confirm_delete": "Delete permanently",
   "sessions.action.confirm_archive": "Archive",
   "sessions.action.delete_prompt": "Delete “{title}”?\nThis cannot be undone. Project files are not deleted.",

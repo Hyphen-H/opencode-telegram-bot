@@ -187,6 +187,14 @@ export function registerCallbackRouter(bot: Bot<Context>, deps: CallbackRouterDe
       },
     ],
     [
+      "session-actions",
+      {
+        name: "session-actions",
+        handlers: [(ctx) => handleSessionAction(ctx, container)],
+        errorScope: "interaction",
+      },
+    ],
+    [
       "question",
       {
         name: "question",

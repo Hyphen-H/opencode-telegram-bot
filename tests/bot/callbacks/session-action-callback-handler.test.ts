@@ -57,13 +57,11 @@ describe("session management confirmations", () => {
       inline_keyboard: [
         [
           { text: "Real title", callback_data: kind === "recent" ? "recent:0" : "session:ses_a" },
-          { text: "Delete", callback_data: "session-action:delete:0" },
-          { text: "Archive", callback_data: "session-action:archive:0" },
+          { text: "⋯", callback_data: "session-actions:0" },
         ],
         [
           { text: "Other", callback_data: "recent:1" },
-          { text: "Delete", callback_data: "session-action:delete:1" },
-          { text: "Archive", callback_data: "session-action:archive:1" },
+          { text: "⋯", callback_data: "session-actions:1" },
         ],
       ],
     };
@@ -82,6 +80,7 @@ describe("session management confirmations", () => {
       return {
         callbackQuery: { data, message: { ...view, message_id: messageId } },
         answerCallbackQuery: vi.fn().mockResolvedValue(true),
+        editMessageReplyMarkup: vi.fn().mockResolvedValue(true),
         editMessageText: vi.fn(
           async (text: string, options: { reply_markup: InlineKeyboardMarkup }) => {
             view.text = text;

@@ -10,7 +10,11 @@ import { detachAttachedSession } from "../../app/services/attach-service.js";
 import { isForegroundBusy } from "../../app/services/run-control-service.js";
 import { formatSessionTitle } from "../../app/formatters/session-title-formatter.js";
 import { ensureActiveInlineMenu } from "../menus/inline-menu.js";
-import { SESSION_ACTION_PREFIX } from "../menus/session-actions-menu.js";
+import {
+  buildSessionActionsSubmenu,
+  SESSION_ACTION_PREFIX,
+  SESSION_ACTIONS_MENU_PREFIX,
+} from "../menus/session-actions-menu.js";
 import { replyBusyBlocked } from "../messages/busy-blocked-renderer.js";
 import { t } from "../../i18n/index.js";
 import { logger } from "../../utils/logger.js";
@@ -50,7 +54,8 @@ async function readIdleSession(id: string, directory: string) {
 
 export async function handleSessionAction(ctx: Context, deps: ActionDeps): Promise<boolean> {
   const data = ctx.callbackQuery?.data;
-  if (!data?.startsWith(SESSION_ACTION_PREFIX)) return false;
+  if (!data?.startsWith(SESSION_ACTION_PREFIX) && !data?.startsWith(SESSION_ACTIONS_MENU_PREFIX))
+    return false;
   if (isForegroundBusy(deps)) {
     await replyBusyBlocked(ctx);
     return true;
@@ -70,6 +75,38 @@ export async function handleSessionAction(ctx: Context, deps: ActionDeps): Promi
     ctx.answerCallbackQuery({ text: t("inline.inactive_callback"), show_alert: true });
   let pending = state!.metadata.sessionAction as PendingAction | undefined;
   try {
+    const submenu = data.match(/^session-actions:(\d+)$/);
+    if (submenu) {
+      const index = Number(submenu[1]);
+      const ids = state!.metadata.sessionIds;
+      if (!Number.isSafeInteger(index) || !Array.isArray(ids) || typeof ids[index] !== "string") {
+        await inactive();
+        return true;
+      }
+      await ctx.answerCallbackQuery();
+      const message = ctx.callbackQuery?.message;
+      if (message?.reply_markup) {
+        deps.interactionManager.transition({
+          metadata: {
+            ...state!.metadata,
+            sessionListKeyboard: message.reply_markup,
+            sessionActionMenuIndex: index,
+          },
+        });
+      }
+      await ctx.editMessageReplyMarkup({ reply_markup: buildSessionActionsSubmenu(index) });
+      return true;
+    }
+    if (data === `${SESSION_ACTIONS_MENU_PREFIX}back`) {
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageReplyMarkup({
+        reply_markup: state!.metadata.sessionListKeyboard as InlineKeyboardMarkup,
+      });
+      deps.interactionManager.transition({
+        metadata: { ...state!.metadata, sessionActionMenuIndex: undefined },
+      });
+      return true;
+    }
     const request = data.match(/^session-action:(delete|archive):(\d+)$/);
     if (request) {
       if (pending) {
@@ -169,7 +206,7 @@ export async function handleSessionAction(ctx: Context, deps: ActionDeps): Promi
           !row.some(
             (button) =>
               "callback_data" in button &&
-              button.callback_data === `${SESSION_ACTION_PREFIX}delete:${pending!.index}`,
+              button.callback_data === `${SESSION_ACTIONS_MENU_PREFIX}${pending!.index}`,
           ),
       ),
     };
